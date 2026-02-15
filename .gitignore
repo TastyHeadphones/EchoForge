@@ -14,6 +14,9 @@ xcuserdata/
 !EchoForge.xcworkspace/
 !EchoForge.xcworkspace/**
 
+# Never commit per-user Xcode workspace data
+EchoForge.xcworkspace/xcuserdata/
+
 # SwiftPM
 .build/
 .swiftpm/
