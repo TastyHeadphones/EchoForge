@@ -11,6 +11,7 @@ private struct EpisodeRecap: Sendable {
 private struct StreamState {
     var hasYieldedProjectHeader: Bool = false
     var recaps: [EpisodeRecap] = []
+    var didYieldAnyEvent: Bool = false
 }
 
 private struct BatchContext {
@@ -98,6 +99,10 @@ private func googleGeminiStream(
         }
     }
 
+    guard state.didYieldAnyEvent else {
+        throw GeminiClientError.invalidStreamData
+    }
+
     continuation.yield(.done)
 }
 
@@ -128,7 +133,7 @@ private func decode(
     onEvent: (PodcastStreamEvent) -> Void
 ) async throws {
     var accumulator = SSEDataAccumulator()
-    var ndjsonDecoder = PodcastNDJSONStreamDecoder()
+    var eventDecoder = PodcastStreamEventChunkDecoder()
     var jsonFramer = GeminiSSEJSONFramer()
     var sseEventIndex = 0
 
@@ -149,7 +154,7 @@ private func decode(
         try yieldEvents(
             fromSSEPayload: payload,
             jsonFramer: &jsonFramer,
-            ndjsonDecoder: &ndjsonDecoder,
+            eventDecoder: &eventDecoder,
             onEvent: onEvent
         )
     }
@@ -160,7 +165,7 @@ private func decode(
         try yieldEvents(
             fromSSEPayload: payload,
             jsonFramer: &jsonFramer,
-            ndjsonDecoder: &ndjsonDecoder,
+            eventDecoder: &eventDecoder,
             onEvent: onEvent
         )
     }
@@ -173,7 +178,7 @@ private func decode(
         )
     }
 
-    for event in try ndjsonDecoder.finish() {
+    for event in try eventDecoder.finish() {
         onEvent(event)
     }
 }
@@ -181,14 +186,23 @@ private func decode(
 private func yieldEvents(
     fromSSEPayload payload: String,
     jsonFramer: inout GeminiSSEJSONFramer,
-    ndjsonDecoder: inout PodcastNDJSONStreamDecoder,
+    eventDecoder: inout PodcastStreamEventChunkDecoder,
     onEvent: (PodcastStreamEvent) -> Void
 ) throws {
     do {
         for jsonData in try jsonFramer.append(payload) {
-            guard let modelText = try extractModelText(fromSSEJSONData: jsonData) else { continue }
+            let modelText: String?
+            do {
+                modelText = try extractModelText(fromSSEJSONData: jsonData)
+            } catch {
+                let preview = String(data: jsonData, encoding: .utf8) ?? "<non-utf8 bytes: \(jsonData.count)>"
+                GeminiWireLogger.logSSEJSONFrameDecodeFailure(framePreview: preview, error: error)
+                continue
+            }
 
-            let events = try ndjsonDecoder.append(modelText)
+            guard let modelText, !modelText.isEmpty else { continue }
+
+            let events = try eventDecoder.append(modelText)
             for event in events {
                 onEvent(event)
             }
@@ -294,6 +308,7 @@ private func handle(
     case let .project(header):
         guard context.allowingProjectHeader, !state.hasYieldedProjectHeader else { return }
         state.hasYieldedProjectHeader = true
+        state.didYieldAnyEvent = true
         continuation.yield(.project(header))
 
     case .done:
@@ -308,14 +323,17 @@ private func handle(
             summary: header.summary,
             recaps: &state.recaps
         )
+        state.didYieldAnyEvent = true
         continuation.yield(.episode(header))
 
     case let .line(line):
         guard context.episodeRange.contains(line.episodeNumber) else { return }
+        state.didYieldAnyEvent = true
         continuation.yield(.line(line))
 
     case let .episodeEnd(end):
         guard context.episodeRange.contains(end.episodeNumber) else { return }
+        state.didYieldAnyEvent = true
         continuation.yield(.episodeEnd(end))
     }
 }
@@ -343,6 +361,7 @@ public enum GeminiClientError: LocalizedError, Sendable {
     case invalidURL
     case invalidHTTPResponse
     case httpError(statusCode: Int, body: String?)
+    case invalidStreamData
 
     public var errorDescription: String? {
         switch self {
@@ -355,6 +374,8 @@ public enum GeminiClientError: LocalizedError, Sendable {
                 return "Gemini request failed (HTTP \(statusCode)): \(body)"
             }
             return "Gemini request failed (HTTP \(statusCode))."
+        case .invalidStreamData:
+            return "Gemini stream returned no valid events."
         }
     }
 }

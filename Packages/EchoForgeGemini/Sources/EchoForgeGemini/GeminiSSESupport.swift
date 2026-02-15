@@ -185,13 +185,26 @@ enum GeminiWireLogger {
     }
 
     static func logSSEDecodeFailure(payload: String, error: Error) {
-        if isEnabled {
-            logger.error("SSE decode error: \(String(describing: error), privacy: .public)")
-            logger.error("Payload preview: \(clip(payload), privacy: .public)")
-        } else {
-            logger.error("SSE decode error: \(String(describing: error), privacy: .public)")
-            logger.error("Set ECHOFORGE_LOG_GEMINI=1 to log payload preview.")
-        }
+        logger.error("SSE decode error: \(String(describing: error), privacy: .public)")
+#if DEBUG
+        logger.error("Payload preview: \(clip(payload), privacy: .public)")
+#else
+        logger.error("Set ECHOFORGE_LOG_GEMINI=1 to log payload preview.")
+#endif
+    }
+
+    static func logSSEJSONFrameDecodeFailure(framePreview: String, error: Error) {
+        logger.error("SSE JSON frame decode error: \(String(describing: error), privacy: .public)")
+#if DEBUG
+        logger.error("SSE JSON frame preview: \(clip(framePreview), privacy: .public)")
+#endif
+    }
+
+    static func logModelOutputDecodeFailure(chunkPreview: String, error: Error) {
+        logger.error("Model output decode error: \(String(describing: error), privacy: .public)")
+#if DEBUG
+        logger.error("Model output preview: \(clip(chunkPreview), privacy: .public)")
+#endif
     }
 
     static func logHTTPError(statusCode: Int, body: String?) {
