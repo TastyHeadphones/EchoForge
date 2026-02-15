@@ -22,10 +22,7 @@ struct PodcastStreamEventChunkDecoder {
 
         if let trailing = framer.finish() {
             let preview = String(data: trailing, encoding: .utf8) ?? "<non-utf8 bytes: \(trailing.count)>"
-            GeminiWireLogger.logModelOutputDecodeFailure(
-                chunkPreview: preview,
-                error: GeminiSSEJSONFramerError.trailingIncompleteJSON
-            )
+            GeminiWireLogger.logTrailingIncompleteJSON(context: "Model output", preview: preview)
         }
 
         return events

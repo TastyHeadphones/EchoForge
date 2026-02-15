@@ -134,6 +134,7 @@ CONTENT REQUIREMENTS:
 - Make each episode meaningfully different: new angle, new examples, and a brief recap tying back to prior episodes.
 - Two-person conversation: alternate speakers frequently (no long monologues).
 - Keep language natural and podcast-like.
+- Each episode should be long-form: target at least 20 minutes of spoken dialogue.
 \(recapSection)
 """
     }
@@ -157,7 +158,7 @@ FORMAT REQUIREMENTS:
 \(doneMarkerRequirement)
 - Then for episode_number \(startEpisode)..\(endEpisode) in order:
   - emit the episode header
-  - emit 24 to 48 dialogue lines
+  - emit 160 to 240 dialogue lines (enough for at least ~20 minutes of spoken audio)
   - emit episode_end
 """
     }

@@ -293,9 +293,29 @@ final class LibraryViewModel: ObservableObject {
             projects.insert(updated, at: 0)
             projects.sort(by: { $0.createdAt > $1.createdAt })
         }
+
+        maybeAutoGenerateAudio(for: updated)
+    }
+}
+
+private extension LibraryViewModel {
+    func maybeAutoGenerateAudio(for project: PodcastProject) {
+        guard isGeminiConfigured else { return }
+        guard project.status == .complete else { return }
+
+        let pendingEpisodes = project.episodes.filter { episode in
+            episode.status == .complete && episode.audioStatus == .none && !episode.lines.isEmpty
+        }
+        guard !pendingEpisodes.isEmpty else { return }
+
+        Task { [audioBackend] in
+            for episode in pendingEpisodes {
+                await audioBackend.start(projectID: project.id, episodeID: episode.id)
+            }
+        }
     }
 
-    private func sanitizedFilename(_ input: String) -> String {
+    func sanitizedFilename(_ input: String) -> String {
         let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "-_ "))
         let cleaned = String(input.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })
         let condensed = cleaned

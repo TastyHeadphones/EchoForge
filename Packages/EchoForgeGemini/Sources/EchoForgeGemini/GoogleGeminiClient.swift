@@ -69,7 +69,7 @@ private func googleGeminiStream(
     continuation: AsyncThrowingStream<PodcastStreamEvent, Error>.Continuation
 ) async throws {
     let totalEpisodes = max(1, request.episodeCount)
-    let batchSize = min(2, totalEpisodes)
+    let batchSize = 1
 
     var state = StreamState()
 
@@ -176,10 +176,7 @@ private func decode(
 
     if let trailing = jsonFramer.finish() {
         let preview = String(data: trailing, encoding: .utf8) ?? "<non-utf8 bytes: \(trailing.count)>"
-        GeminiWireLogger.logSSEDecodeFailure(
-            payload: preview,
-            error: GeminiSSEJSONFramerError.trailingIncompleteJSON
-        )
+        GeminiWireLogger.logTrailingIncompleteJSON(context: "SSE payload", preview: preview)
     }
 
     for event in try eventDecoder.finish() {
@@ -233,7 +230,9 @@ private func makeURLRequest(prompt: String, configuration: GeminiRuntimeConfigur
         generationConfig: GeminiGenerationConfig(
             temperature: 0.7,
             topP: 0.95,
-            maxOutputTokens: 8192
+            // Long-form episodes can easily exceed 8k tokens (NDJSON overhead included).
+            // Gemini will clamp if the selected model enforces a lower cap.
+            maxOutputTokens: 16_384
         )
     )
 

@@ -208,6 +208,12 @@ enum GeminiWireLogger {
         }
     }
 
+    static func logTrailingIncompleteJSON(context: String, preview: String) {
+        guard isEnabled else { return }
+        logger.warning("\(context, privacy: .public) ended with partial JSON (ignored).")
+        logger.warning("Trailing preview: \(clip(preview), privacy: .public)")
+    }
+
     static func logHTTPError(statusCode: Int, body: String?) {
         if isEnabled, let body, !body.isEmpty {
             logger.error("HTTP \(statusCode) body preview: \(clip(body), privacy: .public)")
