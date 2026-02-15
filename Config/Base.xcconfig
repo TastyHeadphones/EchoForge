@@ -1,0 +1,3 @@
+// Shared build settings for all targets.
+
+#include? "Secrets.xcconfig"

@@ -1,0 +1,77 @@
+name: EchoForge
+
+options:
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+configs:
+  Debug: debug
+  Release: release
+
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+
+settings:
+  base:
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: 6.0
+    SWIFT_STRICT_CONCURRENCY: complete
+
+packages:
+  EchoForgeCore:
+    path: Packages/EchoForgeCore
+  EchoForgeGemini:
+    path: Packages/EchoForgeGemini
+  EchoForgePersistence:
+    path: Packages/EchoForgePersistence
+  EchoForgeExport:
+    path: Packages/EchoForgeExport
+  EchoForgeFeatures:
+    path: Packages/EchoForgeFeatures
+
+targets:
+  EchoForge-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: 17.0
+    sources:
+      - path: App/Sources
+    dependencies:
+      - package: EchoForgeFeatures
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.EchoForge.ios
+        INFOPLIST_FILE: App/Support/Info-iOS.plist
+        TARGETED_DEVICE_FAMILY: 1,2
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+
+  EchoForge-macOS:
+    type: application
+    platform: macOS
+    deploymentTarget: 14.0
+    sources:
+      - path: App/Sources
+    dependencies:
+      - package: EchoForgeFeatures
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.EchoForge.macos
+        INFOPLIST_FILE: App/Support/Info-macOS.plist
+
+schemes:
+  EchoForge-iOS:
+    build:
+      targets:
+        EchoForge-iOS: all
+    run:
+      config: Debug
+
+  EchoForge-macOS:
+    build:
+      targets:
+        EchoForge-macOS: all
+    run:
+      config: Debug

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install Mint
+        run: |
+          brew update
+          brew install mint
+
+      - name: Bootstrap Tools
+        run: mint bootstrap
+
+      - name: Generate Xcode Project (XcodeGen)
+        run: mint run xcodegen xcodegen generate --spec project.yml
+
+      - name: SwiftLint
+        run: mint run swiftlint swiftlint lint --strict
+
+      - name: SwiftPM Tests (All Local Packages)
+        run: |
+          swift test --package-path Packages/EchoForgeCore
+          swift test --package-path Packages/EchoForgeGemini
+          swift test --package-path Packages/EchoForgePersistence
+          swift test --package-path Packages/EchoForgeExport
+          swift test --package-path Packages/EchoForgeFeatures
+
+      - name: Build (macOS)
+        run: |
+          xcodebuild build \
+            -project EchoForge.xcodeproj \
+            -scheme EchoForge-macOS \
+            -destination 'platform=macOS'
+
+      - name: Build (iOS)
+        run: |
+          xcodebuild build \
+            -project EchoForge.xcodeproj \
+            -scheme EchoForge-iOS \
+            -destination 'generic/platform=iOS Simulator'
