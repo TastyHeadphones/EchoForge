@@ -7,8 +7,7 @@ struct GenerateView: View {
     var body: some View {
         Form {
             Section {
-                TextField("Topic", text: $viewModel.topic, axis: .vertical)
-                    .lineLimit(2...6)
+                topicInput
 
                 Stepper(value: $viewModel.episodeCount, in: 1...10) {
                     Text("Episodes: \(viewModel.episodeCount)")
@@ -22,6 +21,7 @@ struct GenerateView: View {
                     Text("Gemini is not configured.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Button("Configure Gemini") {
                         openSettings()
@@ -42,9 +42,20 @@ struct GenerateView: View {
                 )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .navigationTitle("EchoForge")
+    }
+
+    @ViewBuilder
+    private var topicInput: some View {
+#if os(macOS)
+        TopicTextEditor(text: $viewModel.topic)
+#else
+        TextField("Topic", text: $viewModel.topic, axis: .vertical)
+            .lineLimit(2...6)
+#endif
     }
 
     private var isGenerateDisabled: Bool {
@@ -52,3 +63,25 @@ struct GenerateView: View {
         return isTopicEmpty || viewModel.isGenerating || !viewModel.isGeminiConfigured
     }
 }
+
+#if os(macOS)
+private struct TopicTextEditor: View {
+    @Binding var text: String
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            TextEditor(text: $text)
+                .font(.body)
+                .frame(minHeight: 90)
+
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("Topic")
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+                    .padding(.leading, 6)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+#endif

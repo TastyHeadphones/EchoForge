@@ -96,27 +96,22 @@ public final class GenerateViewModel: ObservableObject {
             hostBName: hostB.displayName
         )
 
-        generationTask = Task { [generationService] in
-            do {
-                let stream = await generationService.streamProject(initialProject: newProject, request: request)
-                for try await updated in stream {
-                    await MainActor.run {
-                        self.project = updated
-                    }
-                }
+        startGenerationTask(initialProject: newProject, request: request)
+    }
 
-                await MainActor.run {
-                    self.isGenerating = false
+    private func startGenerationTask(initialProject: PodcastProject, request: PodcastGenerationRequest) {
+        generationTask = Task { @MainActor [generationService] in
+            defer { self.isGenerating = false }
+
+            do {
+                let stream = await generationService.streamProject(initialProject: initialProject, request: request)
+                for try await updated in stream {
+                    self.project = updated
                 }
             } catch is CancellationError {
-                await MainActor.run {
-                    self.isGenerating = false
-                }
+                // Silent cancel.
             } catch {
-                await MainActor.run {
-                    self.isGenerating = false
-                    self.errorMessage = error.localizedDescription
-                }
+                self.errorMessage = error.localizedDescription
             }
         }
     }

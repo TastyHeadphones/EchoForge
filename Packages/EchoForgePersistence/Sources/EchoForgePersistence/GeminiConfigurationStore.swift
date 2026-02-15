@@ -67,6 +67,6 @@ public actor GeminiConfigurationStore: GeminiConfigurationStoring {
     }
 
     private var defaultModel: String {
-        "gemini-1.5-flash"
+        "gemini-2.5-flash"
     }
 }
