@@ -11,7 +11,6 @@ enum PodcastProjectUpdater {
             project.status = .generating
             project.title = header.title
             project.description = header.description
-            project.episodeCountRequested = header.episodeCount
             project.hosts = header.hosts.map {
                 PodcastHost(id: $0.id, displayName: $0.name, roleDescription: $0.persona)
             }

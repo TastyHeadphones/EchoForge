@@ -37,9 +37,13 @@ struct GenerateView: View {
 
                         Divider()
 
-                        Stepper(value: $viewModel.episodeCount, in: 1...10) {
+                        Stepper {
                             Text("Episodes: \(viewModel.episodeCount)")
                                 .monospacedDigit()
+                        } onIncrement: {
+                            viewModel.episodeCount += 1
+                        } onDecrement: {
+                            viewModel.episodeCount = max(1, viewModel.episodeCount - 1)
                         }
                         .controlSize(.large)
                     }
@@ -111,8 +115,12 @@ struct GenerateView: View {
             Section {
                 topicInput
 
-                Stepper(value: $viewModel.episodeCount, in: 1...10) {
+                Stepper {
                     Text("Episodes: \(viewModel.episodeCount)")
+                } onIncrement: {
+                    viewModel.episodeCount += 1
+                } onDecrement: {
+                    viewModel.episodeCount = max(1, viewModel.episodeCount - 1)
                 }
             } header: {
                 Text("Generate")

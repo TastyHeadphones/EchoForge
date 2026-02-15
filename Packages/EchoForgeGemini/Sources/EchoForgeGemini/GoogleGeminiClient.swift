@@ -7,6 +7,22 @@ public struct GoogleGeminiClient: GeminiClient {
     private let session: URLSession
     private let logger: Logger
 
+    private struct EpisodeRecap: Sendable {
+        var number: Int
+        var title: String
+        var summary: String
+    }
+
+    private struct StreamState {
+        var hasYieldedProjectHeader: Bool = false
+        var recaps: [EpisodeRecap] = []
+    }
+
+    private struct BatchContext {
+        var allowingProjectHeader: Bool
+        var episodeRange: ClosedRange<Int>
+    }
+
     public init(configuration: GeminiRuntimeConfiguration, session: URLSession = .shared) {
         self.configuration = configuration
         self.session = session
@@ -50,15 +66,37 @@ public struct GoogleGeminiClient: GeminiClient {
         session: URLSession,
         continuation: AsyncThrowingStream<PodcastStreamEvent, Error>.Continuation
     ) async throws {
-        let prompt = PodcastPromptTemplate.makeNDJSONPrompt(
-            topic: request.topic,
-            episodeCount: request.episodeCount,
-            hostAName: request.hostAName,
-            hostBName: request.hostBName
-        )
+        let totalEpisodes = max(1, request.episodeCount)
+        let batchSize = min(2, totalEpisodes)
 
-        let bytes = try await fetchSSEBytes(prompt: prompt, configuration: configuration, session: session)
-        try await decode(bytes: bytes, continuation: continuation)
+        var state = StreamState()
+
+        for range in makeEpisodeRanges(totalEpisodes: totalEpisodes, batchSize: batchSize) {
+            try Task.checkCancellation()
+
+            let context = BatchContext(
+                allowingProjectHeader: !state.hasYieldedProjectHeader,
+                episodeRange: range
+            )
+
+            let prompt = PodcastPromptTemplate.makeNDJSONPrompt(
+                topic: request.topic,
+                episodes: PodcastPromptTemplate.Episodes(total: totalEpisodes, range: range),
+                hosts: PodcastPromptTemplate.Hosts(hostAName: request.hostAName, hostBName: request.hostBName),
+                options: PodcastPromptTemplate.Options(
+                    includeProjectHeader: context.allowingProjectHeader,
+                    includeDoneMarker: false,
+                    priorEpisodesRecap: makePriorEpisodesRecap(recaps: state.recaps, before: range.lowerBound)
+                )
+            )
+
+            let bytes = try await fetchSSEBytes(prompt: prompt, configuration: configuration, session: session)
+            try await decode(bytes: bytes) { event in
+                handle(event, context: context, state: &state, continuation: continuation)
+            }
+        }
+
+        continuation.yield(.done)
     }
 
     private static func fetchSSEBytes(
@@ -84,7 +122,7 @@ public struct GoogleGeminiClient: GeminiClient {
 
     private static func decode(
         bytes: URLSession.AsyncBytes,
-        continuation: AsyncThrowingStream<PodcastStreamEvent, Error>.Continuation
+        onEvent: (PodcastStreamEvent) -> Void
     ) async throws {
         var accumulator = SSEDataAccumulator()
         var ndjsonDecoder = PodcastNDJSONStreamDecoder()
@@ -100,22 +138,22 @@ public struct GoogleGeminiClient: GeminiClient {
                 break
             }
 
-            try yieldEvents(fromSSEPayload: payload, ndjsonDecoder: &ndjsonDecoder, continuation: continuation)
+            try yieldEvents(fromSSEPayload: payload, ndjsonDecoder: &ndjsonDecoder, onEvent: onEvent)
         }
 
         if let payload = accumulator.flush(), payload != "[DONE]" {
-            try yieldEvents(fromSSEPayload: payload, ndjsonDecoder: &ndjsonDecoder, continuation: continuation)
+            try yieldEvents(fromSSEPayload: payload, ndjsonDecoder: &ndjsonDecoder, onEvent: onEvent)
         }
 
         for event in try ndjsonDecoder.finish() {
-            continuation.yield(event)
+            onEvent(event)
         }
     }
 
     private static func yieldEvents(
         fromSSEPayload payload: String,
         ndjsonDecoder: inout PodcastNDJSONStreamDecoder,
-        continuation: AsyncThrowingStream<PodcastStreamEvent, Error>.Continuation
+        onEvent: (PodcastStreamEvent) -> Void
     ) throws {
         guard let modelText = try extractModelText(fromSSEJSON: payload) else {
             return
@@ -123,7 +161,7 @@ public struct GoogleGeminiClient: GeminiClient {
 
         let events = try ndjsonDecoder.append(modelText)
         for event in events {
-            continuation.yield(event)
+            onEvent(event)
         }
     }
 
@@ -183,6 +221,91 @@ public struct GoogleGeminiClient: GeminiClient {
             .compactMap(\.text)
             .joined()
     }
+
+    private static func makeEpisodeRanges(totalEpisodes: Int, batchSize: Int) -> [ClosedRange<Int>] {
+        let total = max(1, totalEpisodes)
+        let clampedBatchSize = max(1, batchSize)
+
+        var ranges: [ClosedRange<Int>] = []
+        var current = 1
+        while current <= total {
+            let end = min(total, current + clampedBatchSize - 1)
+            ranges.append(current...end)
+            current = end + 1
+        }
+
+        return ranges
+    }
+
+    private static func makePriorEpisodesRecap(recaps: [EpisodeRecap], before episodeNumber: Int) -> String? {
+        let candidates = recaps
+            .filter { $0.number < episodeNumber }
+            .sorted(by: { $0.number < $1.number })
+            .suffix(6)
+
+        guard !candidates.isEmpty else { return nil }
+
+        let lines = candidates.map { recap in
+            "Episode \(recap.number): \(asciiSanitized(recap.title)) - \(asciiSanitized(recap.summary))"
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func handle(
+        _ event: PodcastStreamEvent,
+        context: BatchContext,
+        state: inout StreamState,
+        continuation: AsyncThrowingStream<PodcastStreamEvent, Error>.Continuation
+    ) {
+        switch event {
+        case let .project(header):
+            guard context.allowingProjectHeader, !state.hasYieldedProjectHeader else { return }
+            state.hasYieldedProjectHeader = true
+            continuation.yield(.project(header))
+
+        case .done:
+            // The app will emit its own done marker after all batches complete.
+            return
+
+        case let .episode(header):
+            guard context.episodeRange.contains(header.episodeNumber) else { return }
+            upsertRecap(
+                number: header.episodeNumber,
+                title: header.title,
+                summary: header.summary,
+                recaps: &state.recaps
+            )
+            continuation.yield(.episode(header))
+
+        case let .line(line):
+            guard context.episodeRange.contains(line.episodeNumber) else { return }
+            continuation.yield(.line(line))
+
+        case let .episodeEnd(end):
+            guard context.episodeRange.contains(end.episodeNumber) else { return }
+            continuation.yield(.episodeEnd(end))
+        }
+    }
+
+    private static func upsertRecap(number: Int, title: String, summary: String, recaps: inout [EpisodeRecap]) {
+        let recap = EpisodeRecap(number: number, title: title, summary: summary)
+        if let index = recaps.firstIndex(where: { $0.number == number }) {
+            recaps[index] = recap
+        } else {
+            recaps.append(recap)
+        }
+    }
+
+}
+
+private func asciiSanitized(_ value: String) -> String {
+    let scalars = value.unicodeScalars.map { scalar -> Unicode.Scalar in
+        if scalar.value < 0x80 {
+            return scalar
+        }
+        return "?"
+    }
+    return String(String.UnicodeScalarView(scalars))
 }
 
 public enum GeminiClientError: LocalizedError, Sendable {

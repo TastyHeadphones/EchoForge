@@ -69,7 +69,7 @@ public final class GenerateViewModel: ObservableObject {
             return
         }
 
-        let clampedEpisodeCount = max(1, min(episodeCount, 10))
+        let requestedEpisodeCount = max(1, episodeCount)
 
         generationTask?.cancel()
         errorMessage = nil
@@ -79,7 +79,7 @@ public final class GenerateViewModel: ObservableObject {
 
         var newProject = PodcastProject(
             topic: cleanedTopic,
-            episodeCountRequested: clampedEpisodeCount,
+            episodeCountRequested: requestedEpisodeCount,
             hosts: [hostA, hostB],
             status: .generating
         )
@@ -91,7 +91,7 @@ public final class GenerateViewModel: ObservableObject {
 
         let request = PodcastGenerationRequest(
             topic: cleanedTopic,
-            episodeCount: clampedEpisodeCount,
+            episodeCount: requestedEpisodeCount,
             hostAName: hostA.displayName,
             hostBName: hostB.displayName
         )
