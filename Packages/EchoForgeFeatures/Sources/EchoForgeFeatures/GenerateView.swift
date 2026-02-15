@@ -5,6 +5,107 @@ struct GenerateView: View {
     var openSettings: () -> Void
 
     var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        iosBody
+        #endif
+    }
+
+    #if os(macOS)
+    private var macBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("New Podcast")
+                        .font(.largeTitle.weight(.semibold))
+
+                    Text("Generate a multi-episode, two-host dialogue podcast from a single topic.")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Topic")
+                                .font(.headline)
+
+                            TopicTextEditor(text: $viewModel.topic)
+                        }
+
+                        Divider()
+
+                        Stepper(value: $viewModel.episodeCount, in: 1...10) {
+                            Text("Episodes")
+                        }
+                        .controlSize(.large)
+                    }
+                    .padding(.vertical, 6)
+                } label: {
+                    Label("Prompt", systemImage: "square.and.pencil")
+                }
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(viewModel.isGeminiConfigured ? "Gemini configured" : "Gemini not configured")
+                                    .font(.headline)
+
+                                Text("Your API key is stored in the system Keychain.")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Spacer()
+
+                            Button("Settings…") {
+                                openSettings()
+                            }
+                        }
+
+                        if !viewModel.isGeminiConfigured {
+                            Text("Add an API key in Settings to enable generation.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        HStack {
+                            Spacer()
+
+                            Button {
+                                viewModel.startGeneration()
+                            } label: {
+                                Label("Generate Podcast", systemImage: "sparkles")
+                                    .frame(maxWidth: 320)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .disabled(isGenerateDisabled)
+                            .keyboardShortcut(.defaultAction)
+
+                            Spacer()
+                        }
+                    }
+                    .padding(.vertical, 6)
+                } label: {
+                    Label("Generate", systemImage: "waveform")
+                }
+            }
+            .frame(maxWidth: 820, alignment: .leading)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 24)
+        }
+        .navigationTitle("EchoForge")
+    }
+    #endif
+
+    #if !os(macOS)
+    private var iosBody: some View {
         Form {
             Section {
                 topicInput
@@ -36,10 +137,7 @@ struct GenerateView: View {
                 }
                 .disabled(isGenerateDisabled)
 
-                Text(
-                    "Your Gemini API key is stored in the system Keychain. "
-                        + "Configure it from Settings."
-                )
+                Text("Your Gemini API key is stored in the system Keychain. Configure it from Settings.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -47,6 +145,7 @@ struct GenerateView: View {
         }
         .navigationTitle("EchoForge")
     }
+    #endif
 
     @ViewBuilder
     private var topicInput: some View {
@@ -72,13 +171,23 @@ private struct TopicTextEditor: View {
         ZStack(alignment: .topLeading) {
             TextEditor(text: $text)
                 .font(.body)
-                .frame(minHeight: 90)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .frame(minHeight: 120)
+                .background {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.quaternary.opacity(0.35))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(.primary.opacity(0.08), lineWidth: 1)
+                }
 
             if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text("Topic")
                     .foregroundStyle(.secondary)
-                    .padding(.top, 8)
-                    .padding(.leading, 6)
+                    .padding(.top, 14)
+                    .padding(.leading, 16)
                     .allowsHitTesting(false)
             }
         }

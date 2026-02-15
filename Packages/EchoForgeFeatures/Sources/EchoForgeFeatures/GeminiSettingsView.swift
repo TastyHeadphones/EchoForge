@@ -236,10 +236,10 @@ private enum GeminiModelFallback {
         GeminiModelDescriptor(id: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash"),
         GeminiModelDescriptor(id: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro"),
         GeminiModelDescriptor(id: "gemini-2.5-flash-lite", displayName: "Gemini 2.5 Flash-Lite"),
+        GeminiModelDescriptor(id: "gemini-2.0-flash", displayName: "Gemini 2.0 Flash"),
+        GeminiModelDescriptor(id: "gemini-2.0-flash-lite", displayName: "Gemini 2.0 Flash-Lite"),
         GeminiModelDescriptor(id: "gemini-3-flash-preview", displayName: "Gemini 3 Flash (Preview)"),
-        GeminiModelDescriptor(id: "gemini-3-pro-preview", displayName: "Gemini 3 Pro (Preview)"),
-        GeminiModelDescriptor(id: "gemini-1.5-flash", displayName: "Gemini 1.5 Flash"),
-        GeminiModelDescriptor(id: "gemini-1.5-pro", displayName: "Gemini 1.5 Pro")
+        GeminiModelDescriptor(id: "gemini-3-pro-preview", displayName: "Gemini 3 Pro (Preview)")
     ]
 
     static func merge(
