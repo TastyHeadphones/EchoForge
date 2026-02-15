@@ -76,7 +76,22 @@ public struct GeminiSettingsView: View {
                             await refreshModels()
                         }
                     }
-                    .disabled(isLoadingModels)
+
+                    HStack {
+                        Button {
+                            Task { await refreshModels() }
+                        } label: {
+                            Label("Refresh Models", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(isLoadingModels || !isKeyPresent)
+
+                        Spacer()
+
+                        if isLoadingModels {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
 
                     if let message = modelLoadErrorMessage, !message.isEmpty {
                         Text(message)
@@ -84,7 +99,7 @@ public struct GeminiSettingsView: View {
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text("Models list can be refreshed after you save an API key.")
+                        Text("Refresh fetches models from the Gemini API. It requires a saved API key.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

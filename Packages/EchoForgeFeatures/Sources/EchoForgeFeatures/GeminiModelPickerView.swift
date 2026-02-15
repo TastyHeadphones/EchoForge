@@ -39,6 +39,7 @@ struct GeminiModelPickerView: View {
                             .foregroundStyle(.tint)
                     }
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }

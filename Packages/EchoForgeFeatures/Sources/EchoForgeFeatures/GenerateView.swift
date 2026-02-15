@@ -38,7 +38,8 @@ struct GenerateView: View {
                         Divider()
 
                         Stepper(value: $viewModel.episodeCount, in: 1...10) {
-                            Text("Episodes")
+                            Text("Episodes: \(viewModel.episodeCount)")
+                                .monospacedDigit()
                         }
                         .controlSize(.large)
                     }
