@@ -2,26 +2,26 @@ import Foundation
 import OSLog
 import EchoForgeCore
 
+private struct EpisodeRecap: Sendable {
+    var number: Int
+    var title: String
+    var summary: String
+}
+
+private struct StreamState {
+    var hasYieldedProjectHeader: Bool = false
+    var recaps: [EpisodeRecap] = []
+}
+
+private struct BatchContext {
+    var allowingProjectHeader: Bool
+    var episodeRange: ClosedRange<Int>
+}
+
 public struct GoogleGeminiClient: GeminiClient {
     private let configuration: GeminiRuntimeConfiguration
     private let session: URLSession
     private let logger: Logger
-
-    private struct EpisodeRecap: Sendable {
-        var number: Int
-        var title: String
-        var summary: String
-    }
-
-    private struct StreamState {
-        var hasYieldedProjectHeader: Bool = false
-        var recaps: [EpisodeRecap] = []
-    }
-
-    private struct BatchContext {
-        var allowingProjectHeader: Bool
-        var episodeRange: ClosedRange<Int>
-    }
 
     public init(configuration: GeminiRuntimeConfiguration, session: URLSession = .shared) {
         self.configuration = configuration
@@ -115,6 +115,7 @@ public struct GoogleGeminiClient: GeminiClient {
         guard (200..<300).contains(http.statusCode) else {
             let body = try await readAll(bytes)
             let bodyString = String(data: body, encoding: .utf8)
+            GeminiWireLogger.logHTTPError(statusCode: http.statusCode, body: bodyString)
             throw GeminiClientError.httpError(statusCode: http.statusCode, body: bodyString)
         }
 
@@ -127,6 +128,7 @@ public struct GoogleGeminiClient: GeminiClient {
     ) async throws {
         var accumulator = SSEDataAccumulator()
         var ndjsonDecoder = PodcastNDJSONStreamDecoder()
+        var sseEventIndex = 0
 
         for try await line in bytes.lines {
             try Task.checkCancellation()
@@ -134,6 +136,9 @@ public struct GoogleGeminiClient: GeminiClient {
             guard let payload = accumulator.ingest(line: line) else {
                 continue
             }
+
+            sseEventIndex += 1
+            GeminiWireLogger.logSSEPayload(index: sseEventIndex, payload: payload)
 
             if payload == "[DONE]" {
                 break
@@ -143,6 +148,8 @@ public struct GoogleGeminiClient: GeminiClient {
         }
 
         if let payload = accumulator.flush(), payload != "[DONE]" {
+            sseEventIndex += 1
+            GeminiWireLogger.logSSEPayload(index: sseEventIndex, payload: payload)
             try yieldEvents(fromSSEPayload: payload, ndjsonDecoder: &ndjsonDecoder, onEvent: onEvent)
         }
 
@@ -156,9 +163,15 @@ public struct GoogleGeminiClient: GeminiClient {
         ndjsonDecoder: inout PodcastNDJSONStreamDecoder,
         onEvent: (PodcastStreamEvent) -> Void
     ) throws {
-        guard let modelText = try extractModelText(fromSSEJSON: payload) else {
-            return
+        let modelText: String?
+        do {
+            modelText = try extractModelText(fromSSEJSON: payload)
+        } catch {
+            GeminiWireLogger.logSSEDecodeFailure(payload: payload, error: error)
+            throw error
         }
+
+        guard let modelText else { return }
 
         let events = try ndjsonDecoder.append(modelText)
         for event in events {
@@ -329,32 +342,4 @@ public enum GeminiClientError: LocalizedError, Sendable {
     }
 }
 
-private struct SSEDataAccumulator {
-    private var dataLines: [String] = []
-
-    mutating func ingest(line: String) -> String? {
-        if line.hasPrefix("data:") {
-            let payload = line.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
-            dataLines.append(payload)
-            return nil
-        }
-
-        // Blank line indicates end of SSE event.
-        if line.isEmpty {
-            return flush()
-        }
-
-        // Ignore other SSE fields (event:, id:, retry:, comments, etc.).
-        return nil
-    }
-
-    mutating func flush() -> String? {
-        guard !dataLines.isEmpty else {
-            return nil
-        }
-
-        let payload = dataLines.joined(separator: "\n")
-        dataLines.removeAll(keepingCapacity: true)
-        return payload
-    }
-}
+// SSE parsing + wire logging support lives in `GeminiSSESupport.swift`.
