@@ -1,51 +1,37 @@
 import SwiftUI
-import EchoForgeCore
+import UniformTypeIdentifiers
 
 public struct RootView: View {
     private let dependencies: AppDependencies
 
-    @StateObject private var viewModel: GenerateViewModel
-    @State private var isShowingSettings: Bool = false
+    @StateObject private var viewModel: LibraryViewModel
 
     public init(dependencies: AppDependencies = .live()) {
         self.dependencies = dependencies
-        _viewModel = StateObject(wrappedValue: GenerateViewModel(dependencies: dependencies))
+        _viewModel = StateObject(wrappedValue: LibraryViewModel(dependencies: dependencies))
     }
 
     public var body: some View {
-        NavigationStack {
-            Group {
-                if let project = viewModel.project {
-                    ProjectView(project: project, viewModel: viewModel)
-                } else {
-                    GenerateView(viewModel: viewModel) {
-                        isShowingSettings = true
-                    }
-                }
-            }
-        }
+        LibraryView(viewModel: viewModel)
         .task {
-            viewModel.restoreMostRecentProject()
-            viewModel.refreshGeminiConfigurationStatus()
-
-            let apiKey = try? await dependencies.geminiConfigurationStore.readAPIKey()
-            if apiKey?.isEmpty != false {
-                isShowingSettings = true
-            }
+            await viewModel.bootstrap()
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Settings") {
-                    isShowingSettings = true
-                }
-            }
-        }
-        .sheet(isPresented: $isShowingSettings) {
+        .sheet(isPresented: $viewModel.isShowingSettings) {
             GeminiSettingsView(configurationStore: dependencies.geminiConfigurationStore)
         }
-        .onChange(of: isShowingSettings) { _, showing in
+        .onChange(of: viewModel.isShowingSettings) { _, showing in
             if !showing {
-                viewModel.refreshGeminiConfigurationStatus()
+                Task { await viewModel.refreshGeminiConfigurationStatus() }
+            }
+        }
+        .fileExporter(
+            isPresented: $viewModel.isShowingExportPicker,
+            document: viewModel.exportDocument ?? ZipFileDocument(data: Data()),
+            contentType: .zip,
+            defaultFilename: viewModel.exportDefaultFilename
+        ) { result in
+            if case let .failure(error) = result {
+                viewModel.errorMessage = error.localizedDescription
             }
         }
         .alert("Error", isPresented: isPresentingError) {

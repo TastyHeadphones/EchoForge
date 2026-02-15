@@ -9,7 +9,9 @@ enum PodcastProjectUpdater {
         switch event {
         case let .project(header):
             project.status = .generating
-            project.title = header.title
+            if project.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+                project.title = header.title
+            }
             project.description = header.description
             project.hosts = header.hosts.map {
                 PodcastHost(id: $0.id, displayName: $0.name, roleDescription: $0.persona)

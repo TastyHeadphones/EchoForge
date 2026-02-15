@@ -5,7 +5,7 @@ import EchoForgePersistence
 @MainActor
 public struct GeminiSettingsView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var isShowingModelBrowser: Bool = false
+    @State private var isShowingModelPicker: Bool = false
     @StateObject private var viewModel: GeminiSettingsViewModel
 
     public init(
@@ -41,8 +41,8 @@ public struct GeminiSettingsView: View {
                 } message: {
                     Text(viewModel.errorMessage ?? "")
                 }
-                .sheet(isPresented: $isShowingModelBrowser) {
-                    GeminiModelBrowserSheet(
+                .navigationDestination(isPresented: $isShowingModelPicker) {
+                    GeminiModelPickerView(
                         selectedModel: selectedModelBinding,
                         models: viewModel.availableModels
                     )
@@ -108,7 +108,7 @@ public struct GeminiSettingsView: View {
 
                         HStack(spacing: 12) {
                             Button("Choose Model…") {
-                                isShowingModelBrowser = true
+                                isShowingModelPicker = true
                             }
 
                             Button {
@@ -182,7 +182,7 @@ public struct GeminiSettingsView: View {
                 }
 
                 Button("Choose Model…") {
-                    isShowingModelBrowser = true
+                    isShowingModelPicker = true
                 }
 
                 Button {

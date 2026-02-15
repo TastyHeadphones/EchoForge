@@ -86,7 +86,8 @@ public struct GoogleGeminiClient: GeminiClient {
                 options: PodcastPromptTemplate.Options(
                     includeProjectHeader: context.allowingProjectHeader,
                     includeDoneMarker: false,
-                    priorEpisodesRecap: makePriorEpisodesRecap(recaps: state.recaps, before: range.lowerBound)
+                    priorEpisodesRecap: makePriorEpisodesRecap(recaps: state.recaps, before: range.lowerBound),
+                    projectTitle: request.projectTitle
                 )
             )
 

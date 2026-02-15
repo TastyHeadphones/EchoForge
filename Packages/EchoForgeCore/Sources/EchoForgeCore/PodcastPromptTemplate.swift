@@ -27,15 +27,18 @@ public struct PodcastPromptTemplate: Sendable {
         public var includeProjectHeader: Bool
         public var includeDoneMarker: Bool
         public var priorEpisodesRecap: String?
+        public var projectTitle: String?
 
         public init(
             includeProjectHeader: Bool = true,
             includeDoneMarker: Bool = true,
-            priorEpisodesRecap: String? = nil
+            priorEpisodesRecap: String? = nil,
+            projectTitle: String? = nil
         ) {
             self.includeProjectHeader = includeProjectHeader
             self.includeDoneMarker = includeDoneMarker
             self.priorEpisodesRecap = priorEpisodesRecap
+            self.projectTitle = projectTitle
         }
     }
 
@@ -118,10 +121,12 @@ Now start streaming NDJSON. Remember: ONE JSON OBJECT PER LINE.
         let endEpisode = episodes.range.upperBound
 
         let recapSection = makePriorEpisodeRecapSection(startEpisode: startEpisode, recap: options.priorEpisodesRecap)
+        let titleSection = makeProjectTitleSection(title: options.projectTitle)
 
         return """
 CONTENT REQUIREMENTS:
 - Topic: \(topic)
+- Project title: \(titleSection)
 - Total episodes: \(episodes.total)
 - Generate ONLY episodes \(startEpisode) through \(endEpisode) (inclusive), and no other episode numbers.
 - Host A name: \(hosts.hostAName)
@@ -170,5 +175,13 @@ PRIOR EPISODES (for continuity; do not contradict; do not invent new facts):
 - These are episodes \(rangeText) summaries.
 \(trimmed)
 """
+    }
+
+    private static func makeProjectTitleSection(title: String?) -> String {
+        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else {
+            return "Generate a good title."
+        }
+        return "Use exactly this title in the project header: \"\(trimmed)\"."
     }
 }
