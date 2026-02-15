@@ -70,8 +70,8 @@ public struct GeminiSettingsView: View {
                     NavigationLink("Choose Model") {
                         GeminiModelPickerView(
                             selectedModel: $selectedModel,
-                            models: availableModels,
-                            isRefreshing: isLoadingModels
+                            models: $availableModels,
+                            isRefreshing: $isLoadingModels
                         ) {
                             await refreshModels()
                         }

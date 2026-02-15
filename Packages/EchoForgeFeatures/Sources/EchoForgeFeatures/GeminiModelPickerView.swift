@@ -3,8 +3,8 @@ import EchoForgeGemini
 
 struct GeminiModelPickerView: View {
     @Binding var selectedModel: String
-    let models: [GeminiModelDescriptor]
-    let isRefreshing: Bool
+    @Binding var models: [GeminiModelDescriptor]
+    @Binding var isRefreshing: Bool
     let refresh: @Sendable () async -> Void
 
     @Environment(\.dismiss) private var dismiss
