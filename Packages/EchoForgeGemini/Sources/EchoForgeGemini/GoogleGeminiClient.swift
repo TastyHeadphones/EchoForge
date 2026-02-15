@@ -129,6 +129,7 @@ private func decode(
 ) async throws {
     var accumulator = SSEDataAccumulator()
     var ndjsonDecoder = PodcastNDJSONStreamDecoder()
+    var jsonFramer = GeminiSSEJSONFramer()
     var sseEventIndex = 0
 
     for try await line in bytes.lines {
@@ -145,13 +146,31 @@ private func decode(
             break
         }
 
-        try yieldEvents(fromSSEPayload: payload, ndjsonDecoder: &ndjsonDecoder, onEvent: onEvent)
+        try yieldEvents(
+            fromSSEPayload: payload,
+            jsonFramer: &jsonFramer,
+            ndjsonDecoder: &ndjsonDecoder,
+            onEvent: onEvent
+        )
     }
 
     if let payload = accumulator.flush(), payload != "[DONE]" {
         sseEventIndex += 1
         GeminiWireLogger.logSSEPayload(index: sseEventIndex, payload: payload)
-        try yieldEvents(fromSSEPayload: payload, ndjsonDecoder: &ndjsonDecoder, onEvent: onEvent)
+        try yieldEvents(
+            fromSSEPayload: payload,
+            jsonFramer: &jsonFramer,
+            ndjsonDecoder: &ndjsonDecoder,
+            onEvent: onEvent
+        )
+    }
+
+    if let trailing = jsonFramer.finish() {
+        let preview = String(data: trailing, encoding: .utf8) ?? "<non-utf8 bytes: \(trailing.count)>"
+        GeminiWireLogger.logSSEDecodeFailure(
+            payload: preview,
+            error: GeminiSSEJSONFramerError.trailingIncompleteJSON
+        )
     }
 
     for event in try ndjsonDecoder.finish() {
@@ -161,12 +180,14 @@ private func decode(
 
 private func yieldEvents(
     fromSSEPayload payload: String,
+    jsonFramer: inout GeminiSSEJSONFramer,
     ndjsonDecoder: inout PodcastNDJSONStreamDecoder,
     onEvent: (PodcastStreamEvent) -> Void
 ) throws {
     do {
-        let modelTexts = try extractModelTexts(fromSSEPayload: payload)
-        for modelText in modelTexts {
+        for jsonData in try jsonFramer.append(payload) {
+            guard let modelText = try extractModelText(fromSSEJSONData: jsonData) else { continue }
+
             let events = try ndjsonDecoder.append(modelText)
             for event in events {
                 onEvent(event)
@@ -222,8 +243,7 @@ private func readAll(_ bytes: URLSession.AsyncBytes) async throws -> Data {
     }
 }
 
-private func extractModelText(fromSSEJSON sseJSON: String) throws -> String? {
-    let data = Data(sseJSON.utf8)
+private func extractModelText(fromSSEJSONData data: Data) throws -> String? {
     let response = try JSONDecoder().decode(GeminiStreamGenerateContentResponse.self, from: data)
 
     return response
@@ -233,49 +253,6 @@ private func extractModelText(fromSSEJSON sseJSON: String) throws -> String? {
         .parts?
         .compactMap(\.text)
         .joined()
-}
-
-private func extractModelTexts(fromSSEPayload payload: String) throws -> [String] {
-    let trimmedPayload = payload.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmedPayload.isEmpty else { return [] }
-
-    do {
-        if let text = try extractModelText(fromSSEJSON: trimmedPayload) {
-            return [text]
-        }
-        return []
-    } catch {
-        // Some servers emit multiple `data:` JSON objects within a single SSE event. When we join the
-        // `data:` lines, that becomes multiple top-level JSON objects separated by newlines.
-        let chunks = trimmedPayload
-            .split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && $0 != "[DONE]" }
-
-        guard chunks.count > 1 else { throw error }
-
-        var texts: [String] = []
-        var decodedAnyChunk = false
-        var lastChunkError: Error?
-
-        for chunk in chunks {
-            do {
-                let text = try extractModelText(fromSSEJSON: String(chunk))
-                decodedAnyChunk = true
-                if let text, !text.isEmpty {
-                    texts.append(text)
-                }
-            } catch {
-                lastChunkError = error
-            }
-        }
-
-        if decodedAnyChunk {
-            return texts
-        }
-
-        throw lastChunkError ?? error
-    }
 }
 
 private func makeEpisodeRanges(totalEpisodes: Int, batchSize: Int) -> [ClosedRange<Int>] {
