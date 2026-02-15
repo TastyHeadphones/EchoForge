@@ -2,282 +2,249 @@ import SwiftUI
 import EchoForgeGemini
 import EchoForgePersistence
 
+@MainActor
 public struct GeminiSettingsView: View {
-    private let configurationStore: any GeminiConfigurationStoring
-    private let modelsClient: any GeminiModelsListing
-
     @Environment(\.dismiss) private var dismiss
-
-    @State private var isKeyPresent: Bool = false
-    @State private var apiKeyDraft: String = ""
-    @State private var selectedModel: String = ""
-    @State private var availableModels: [GeminiModelDescriptor] = GeminiModelFallback.fallback
-    @State private var isLoadingModels: Bool = false
-    @State private var modelLoadErrorMessage: String?
-
-    @State private var isSaving: Bool = false
-    @State private var errorMessage: String?
+    @State private var isShowingModelBrowser: Bool = false
+    @StateObject private var viewModel: GeminiSettingsViewModel
 
     public init(
         configurationStore: any GeminiConfigurationStoring,
         modelsClient: any GeminiModelsListing = GoogleGeminiModelsClient()
     ) {
-        self.configurationStore = configurationStore
-        self.modelsClient = modelsClient
+        _viewModel = StateObject(
+            wrappedValue: GeminiSettingsViewModel(
+                configurationStore: configurationStore,
+                modelsClient: modelsClient
+            )
+        )
     }
 
     public var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    SecureField("Gemini API Key", text: $apiKeyDraft)
-                        .textContentType(.password)
-
-                    Text(keyStatusText)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    HStack {
-                        Button("Clear Key", role: .destructive) {
-                            Task { await clearKey() }
+            content
+                .navigationTitle("Settings")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") {
+                            dismiss()
                         }
-                        .disabled(!isKeyPresent || isSaving)
-
-                        Spacer()
-
-                        Button("Save") {
-                            Task { await save() }
-                        }
-                        .disabled(isSaving || isSaveDisabled)
                     }
-                } header: {
-                    Text("Gemini")
-                } footer: {
-                    Text("The API key is stored in your Keychain and never written to source control.")
                 }
-
-                Section {
-                    HStack {
-                        Text("Selected")
-                        Spacer()
-                        Text(selectedModel)
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(.primary)
-                            .textSelection(.enabled)
-                            .multilineTextAlignment(.trailing)
+                .task {
+                    await viewModel.loadIfNeeded()
+                }
+                .alert("Error", isPresented: isPresentingError) {
+                    Button("OK", role: .cancel) {
+                        viewModel.errorMessage = nil
                     }
+                } message: {
+                    Text(viewModel.errorMessage ?? "")
+                }
+                .sheet(isPresented: $isShowingModelBrowser) {
+                    GeminiModelBrowserSheet(
+                        selectedModel: selectedModelBinding,
+                        models: viewModel.availableModels
+                    )
+                }
+        }
+#if os(macOS)
+        .frame(minWidth: 640, minHeight: 560)
+#endif
+    }
 
-                    NavigationLink("Choose Model") {
-                        GeminiModelPickerView(
-                            selectedModel: $selectedModel,
-                            models: $availableModels,
-                            isRefreshing: $isLoadingModels
-                        ) {
-                            await refreshModels()
-                        }
-                    }
+    @ViewBuilder
+    private var content: some View {
+#if os(macOS)
+        macContent
+#else
+        iosContent
+#endif
+    }
 
-                    HStack {
-                        Button {
-                            Task { await refreshModels() }
-                        } label: {
-                            Label("Refresh Models", systemImage: "arrow.clockwise")
-                        }
-                        .disabled(isLoadingModels || !isKeyPresent)
+    private var macContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        SecureField("Gemini API Key", text: $viewModel.apiKeyDraft)
+                            .textContentType(.password)
+                            .textFieldStyle(.roundedBorder)
 
-                        Spacer()
-
-                        if isLoadingModels {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
-
-                    if let message = modelLoadErrorMessage, !message.isEmpty {
-                        Text(message)
-                            .font(.footnote)
+                        Text(keyStatusText)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        Text("Refresh fetches models from the Gemini API. It requires a saved API key.")
-                            .font(.footnote)
+
+                        HStack(spacing: 12) {
+                            Button("Clear Key", role: .destructive) {
+                                Task { await viewModel.clearAPIKey() }
+                            }
+                            .disabled(!viewModel.isKeyPresent || viewModel.isSaving)
+
+                            Spacer()
+
+                            Button("Save API Key") {
+                                Task { await viewModel.saveAPIKey() }
+                            }
+                            .disabled(viewModel.isSaving || isSaveDisabled)
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                } label: {
+                    Label("Gemini", systemImage: "key.fill")
+                }
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        LabeledContent("Selected Model") {
+                            Text(viewModel.selectedModel)
+                                .font(.system(.body, design: .monospaced))
+                                .lineLimit(2)
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: 420, alignment: .trailing)
+                        }
+
+                        HStack(spacing: 12) {
+                            Button("Choose Model…") {
+                                isShowingModelBrowser = true
+                            }
+
+                            Button {
+                                Task { await viewModel.refreshModels() }
+                            } label: {
+                                Label("Refresh Models", systemImage: "arrow.clockwise")
+                            }
+                            .disabled(viewModel.isLoadingModels || !viewModel.isKeyPresent)
+
+                            if viewModel.isLoadingModels {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+
+                            Spacer()
+                        }
+
+                        Text(modelHelpText)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                } header: {
-                    Text("Model")
+                    .padding(.vertical, 6)
+                } label: {
+                    Label("Model", systemImage: "slider.horizontal.3")
                 }
             }
-            .navigationTitle("Settings")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        dismiss()
+            .frame(maxWidth: 820, alignment: .leading)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 24)
+        }
+    }
+
+    private var iosContent: some View {
+        Form {
+            Section {
+                SecureField("Gemini API Key", text: $viewModel.apiKeyDraft)
+                    .textContentType(.password)
+
+                Text(keyStatusText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    Button("Clear Key", role: .destructive) {
+                        Task { await viewModel.clearAPIKey() }
                     }
+                    .disabled(!viewModel.isKeyPresent || viewModel.isSaving)
+
+                    Spacer()
+
+                    Button("Save API Key") {
+                        Task { await viewModel.saveAPIKey() }
+                    }
+                    .disabled(viewModel.isSaving || isSaveDisabled)
+                    .buttonStyle(.borderedProminent)
                 }
+            } header: {
+                Text("Gemini")
+            } footer: {
+                Text("The API key is stored in your Keychain and never written to source control.")
             }
-            .task {
-                await load()
-            }
-            .onChange(of: selectedModel) { _, newValue in
-                Task { await configurationStore.setModel(newValue) }
-            }
-            .alert("Error", isPresented: isPresentingError) {
-                Button("OK", role: .cancel) {
-                    errorMessage = nil
+
+            Section {
+                LabeledContent("Selected") {
+                    Text(viewModel.selectedModel)
+                        .font(.system(.body, design: .monospaced))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
                 }
-            } message: {
-                Text(errorMessage ?? "")
+
+                Button("Choose Model…") {
+                    isShowingModelBrowser = true
+                }
+
+                Button {
+                    Task { await viewModel.refreshModels() }
+                } label: {
+                    Label("Refresh Models", systemImage: "arrow.clockwise")
+                }
+                .disabled(viewModel.isLoadingModels || !viewModel.isKeyPresent)
+
+                if viewModel.isLoadingModels {
+                    ProgressView()
+                }
+
+                Text(modelHelpText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Model")
             }
         }
     }
 
+    private var isSaveDisabled: Bool {
+        viewModel.apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+extension GeminiSettingsView {
     private var keyStatusText: String {
-        if isKeyPresent {
+        if viewModel.isKeyPresent {
             return "API key is saved. Enter a new value and Save to replace it."
         }
         return "No API key saved yet."
     }
 
-    private var isSaveDisabled: Bool {
-        apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var modelHelpText: String {
+        if let message = viewModel.modelLoadErrorMessage, !message.isEmpty {
+            return message
+        }
+
+        return "Choose a Gemini model for generation. "
+            + "Refresh fetches models from the Gemini API and requires a saved API key."
     }
 
-    private var isPresentingError: Binding<Bool> {
+    private var selectedModelBinding: Binding<String> {
         Binding(
-            get: { errorMessage != nil },
-            set: { presenting in
-                if !presenting {
-                    errorMessage = nil
-                }
+            get: { viewModel.selectedModel },
+            set: { newValue in
+                viewModel.userSelectedModel(newValue)
             }
         )
     }
 
-    private func load() async {
-        do {
-            let apiKey = try await configurationStore.readAPIKey()
-            isKeyPresent = apiKey?.isEmpty == false
-        } catch {
-            errorMessage = error.localizedDescription
-            isKeyPresent = false
-        }
-
-        selectedModel = await configurationStore.readModel()
-
-        // Best-effort: populate a reasonably current list of models.
-        await refreshModels()
-    }
-
-    private func save() async {
-        isSaving = true
-        defer { isSaving = false }
-
-        let trimmedKey = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        do {
-            if !trimmedKey.isEmpty {
-                try await configurationStore.setAPIKey(trimmedKey)
-                apiKeyDraft = ""
-                isKeyPresent = true
+    private var isPresentingError: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { presenting in
+                if !presenting {
+                    viewModel.errorMessage = nil
+                }
             }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-
-        await refreshModels()
-    }
-
-    private func clearKey() async {
-        isSaving = true
-        defer { isSaving = false }
-
-        do {
-            try await configurationStore.clearAPIKey()
-            isKeyPresent = false
-            apiKeyDraft = ""
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func refreshModels() async {
-        if isLoadingModels {
-            return
-        }
-
-        isLoadingModels = true
-        defer { isLoadingModels = false }
-
-        modelLoadErrorMessage = nil
-
-        do {
-            let apiKey = try await configurationStore.readAPIKey()
-            guard let apiKey, !apiKey.isEmpty else {
-                availableModels = GeminiModelFallback.fallbackEnsuringSelected(
-                    modelID: selectedModel,
-                    models: GeminiModelFallback.fallback
-                )
-                modelLoadErrorMessage = "Save an API key to fetch the full model list."
-                return
-            }
-
-            let remote = try await modelsClient.listTextGenerationModels(
-                apiKey: apiKey,
-                apiVersion: "v1beta",
-                baseURL: GeminiModelFallback.baseURL
-            )
-            let merged = GeminiModelFallback.merge(
-                remoteModels: remote,
-                fallbackModels: GeminiModelFallback.fallback,
-                selectedModelID: selectedModel
-            )
-            availableModels = merged
-        } catch {
-            availableModels = GeminiModelFallback.fallbackEnsuringSelected(
-                modelID: selectedModel,
-                models: GeminiModelFallback.fallback
-            )
-            modelLoadErrorMessage = error.localizedDescription
-        }
-    }
-}
-
-private enum GeminiModelFallback {
-    static let baseURL: URL = URL(string: "https://generativelanguage.googleapis.com")!
-
-    // Curated from Google Gemini API docs. This list is only a fallback; refresh pulls the authoritative list.
-    static let fallback: [GeminiModelDescriptor] = [
-        GeminiModelDescriptor(id: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash"),
-        GeminiModelDescriptor(id: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro"),
-        GeminiModelDescriptor(id: "gemini-2.5-flash-lite", displayName: "Gemini 2.5 Flash-Lite"),
-        GeminiModelDescriptor(id: "gemini-2.0-flash", displayName: "Gemini 2.0 Flash"),
-        GeminiModelDescriptor(id: "gemini-2.0-flash-lite", displayName: "Gemini 2.0 Flash-Lite"),
-        GeminiModelDescriptor(id: "gemini-3-flash-preview", displayName: "Gemini 3 Flash (Preview)"),
-        GeminiModelDescriptor(id: "gemini-3-pro-preview", displayName: "Gemini 3 Pro (Preview)")
-    ]
-
-    static func merge(
-        remoteModels: [GeminiModelDescriptor],
-        fallbackModels: [GeminiModelDescriptor],
-        selectedModelID: String
-    ) -> [GeminiModelDescriptor] {
-        // Prefer remote data; keep fallback entries if remote doesn't include them.
-        var byID: [String: GeminiModelDescriptor] = Dictionary(uniqueKeysWithValues: remoteModels.map { ($0.id, $0) })
-        for model in fallbackModels where byID[model.id] == nil {
-            byID[model.id] = model
-        }
-
-        if !selectedModelID.isEmpty, byID[selectedModelID] == nil {
-            byID[selectedModelID] = GeminiModelDescriptor(id: selectedModelID)
-        }
-
-        return byID.values.sorted(by: { $0.id < $1.id })
-    }
-
-    static func fallbackEnsuringSelected(modelID: String, models: [GeminiModelDescriptor]) -> [GeminiModelDescriptor] {
-        guard !modelID.isEmpty else { return models }
-        guard !models.contains(where: { $0.id == modelID }) else { return models }
-        return (models + [GeminiModelDescriptor(id: modelID)]).sorted(by: { $0.id < $1.id })
+        )
     }
 }

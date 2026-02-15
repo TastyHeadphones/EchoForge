@@ -3,9 +3,7 @@ import EchoForgeGemini
 
 struct GeminiModelPickerView: View {
     @Binding var selectedModel: String
-    @Binding var models: [GeminiModelDescriptor]
-    @Binding var isRefreshing: Bool
-    let refresh: @Sendable () async -> Void
+    let models: [GeminiModelDescriptor]
 
     @Environment(\.dismiss) private var dismiss
 
@@ -45,20 +43,6 @@ struct GeminiModelPickerView: View {
         }
         .navigationTitle("Choose Model")
         .searchable(text: $query, placement: .toolbar, prompt: "Search models")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    Task { await refresh() }
-                } label: {
-                    if isRefreshing {
-                        ProgressView()
-                    } else {
-                        Text("Refresh")
-                    }
-                }
-                .disabled(isRefreshing)
-            }
-        }
     }
 
     private var filteredModels: [GeminiModelDescriptor] {
