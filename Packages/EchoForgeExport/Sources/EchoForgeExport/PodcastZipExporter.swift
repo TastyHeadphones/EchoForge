@@ -3,15 +3,34 @@ import ZIPFoundation
 import EchoForgeCore
 
 public actor PodcastZipExporter: PodcastExporting {
-    public init() {}
+    public typealias EpisodeAudioURLProvider = @Sendable (_ project: PodcastProject, _ episode: Episode) -> URL?
+
+    private let episodeAudioURLProvider: EpisodeAudioURLProvider?
+
+    public init() {
+        self.episodeAudioURLProvider = PodcastZipExporter.defaultEpisodeAudioURLProvider()
+    }
+
+    public init(episodeAudioURLProvider: EpisodeAudioURLProvider?) {
+        self.episodeAudioURLProvider = episodeAudioURLProvider
+    }
 
     public func export(project: PodcastProject) async throws -> URL {
-        try await Task.detached(priority: .utility) {
-            try Self.exportSync(project: project, fileManager: .default)
+        let episodeAudioURLProvider = episodeAudioURLProvider
+        return try await Task.detached(priority: .utility) {
+            try Self.exportSync(
+                project: project,
+                fileManager: .default,
+                episodeAudioURLProvider: episodeAudioURLProvider
+            )
         }.value
     }
 
-    nonisolated private static func exportSync(project: PodcastProject, fileManager: FileManager) throws -> URL {
+    nonisolated private static func exportSync(
+        project: PodcastProject,
+        fileManager: FileManager,
+        episodeAudioURLProvider: EpisodeAudioURLProvider?
+    ) throws -> URL {
         let exportDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("EchoForgeExport-\(project.id.uuidString)", isDirectory: true)
 
@@ -37,9 +56,38 @@ public actor PodcastZipExporter: PodcastExporting {
             let transcript = makeTranscript(project: project, episode: episode)
             let transcriptData = Data(transcript.utf8)
             try addFile(to: archive, path: "episodes/episode-\(number).txt", data: transcriptData)
+
+            if
+                episode.audioStatus == .ready,
+                let episodeAudioURLProvider,
+                let audioURL = episodeAudioURLProvider(project, episode),
+                fileManager.fileExists(atPath: audioURL.path) {
+                do {
+                    let audioData = try Data(contentsOf: audioURL)
+                    let ext = audioURL.pathExtension.isEmpty ? "wav" : audioURL.pathExtension
+                    try addFile(to: archive, path: "audio/episode-\(number).\(ext)", data: audioData)
+                } catch {
+                    // If audio can't be read, keep exporting transcripts + metadata.
+                }
+            }
         }
 
         return zipURL
+    }
+
+    nonisolated private static func defaultEpisodeAudioURLProvider() -> EpisodeAudioURLProvider {
+        { project, episode in
+            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? FileManager.default.temporaryDirectory
+            let root = base.appendingPathComponent("EchoForge", isDirectory: true)
+            let projectAudioDir = root
+                .appendingPathComponent("audio", isDirectory: true)
+                .appendingPathComponent(project.id.uuidString, isDirectory: true)
+
+            let fileName = episode.audio?.fileName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolved = fileName?.isEmpty == false ? fileName! : "\(episode.id.uuidString).wav"
+            return projectAudioDir.appendingPathComponent(resolved, isDirectory: false)
+        }
     }
 
     nonisolated private static func addFile(to archive: Archive, path: String, data: Data) throws {

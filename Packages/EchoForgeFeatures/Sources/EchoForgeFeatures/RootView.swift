@@ -13,7 +13,7 @@ public struct RootView: View {
     }
 
     public var body: some View {
-        LibraryView(viewModel: viewModel)
+        content
         .environmentObject(audioPlayer)
         .task {
             await viewModel.bootstrap()
@@ -28,7 +28,7 @@ public struct RootView: View {
         }
         .fileExporter(
             isPresented: $viewModel.isShowingExportPicker,
-            document: viewModel.exportDocument ?? ZipFileDocument(data: Data()),
+            document: viewModel.exportDocument ?? ZipFileDocument.placeholder(),
             contentType: .zip,
             defaultFilename: viewModel.exportDefaultFilename
         ) { result in
@@ -43,10 +43,21 @@ public struct RootView: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
-        .safeAreaInset(edge: .bottom) {
+    }
+
+    @ViewBuilder
+    private var content: some View {
+#if os(macOS)
+        VStack(spacing: 0) {
+            LibraryView(viewModel: viewModel)
             AudioPlayerBar()
-                .environmentObject(audioPlayer)
         }
+#else
+        LibraryView(viewModel: viewModel)
+            .safeAreaInset(edge: .bottom) {
+                AudioPlayerBar()
+            }
+#endif
     }
 
     private var isPresentingError: Binding<Bool> {

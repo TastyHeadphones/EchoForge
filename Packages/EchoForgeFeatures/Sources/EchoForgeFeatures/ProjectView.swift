@@ -21,7 +21,7 @@ struct ProjectView: View {
         .toolbar { toolbarContent }
         .fileExporter(
             isPresented: $viewModel.isShowingExportPicker,
-            document: viewModel.exportDocument ?? ZipFileDocument(data: Data()),
+            document: viewModel.exportDocument ?? ZipFileDocument.placeholder(),
             contentType: .zip,
             defaultFilename: viewModel.exportDefaultFilename
         ) { result in
@@ -103,7 +103,7 @@ struct ProjectView: View {
         .toolbar { toolbarContent }
         .fileExporter(
             isPresented: $viewModel.isShowingExportPicker,
-            document: viewModel.exportDocument ?? ZipFileDocument(data: Data()),
+            document: viewModel.exportDocument ?? ZipFileDocument.placeholder(),
             contentType: .zip,
             defaultFilename: viewModel.exportDefaultFilename
         ) { result in

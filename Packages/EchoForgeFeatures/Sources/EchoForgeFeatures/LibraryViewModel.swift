@@ -249,14 +249,13 @@ final class LibraryViewModel: ObservableObject {
         Task { [exporter] in
             do {
                 let zipURL = try await exporter.export(project: project)
-                let data = try Data(contentsOf: zipURL)
 
                 let filename = sanitizedFilename(
                     (project.title?.isEmpty == false ? project.title : project.topic) ?? "EchoForge"
                 )
 
                 await MainActor.run {
-                    self.exportDocument = ZipFileDocument(data: data)
+                    self.exportDocument = ZipFileDocument(url: zipURL)
                     self.exportDefaultFilename = "\(filename).zip"
                     self.isExporting = false
                     self.isShowingExportPicker = true
