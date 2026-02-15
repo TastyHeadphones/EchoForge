@@ -11,11 +11,12 @@ actor PodcastGenerationBackend {
     nonisolated let updates: AsyncStream<PodcastProject>
 
     init(generationService: PodcastGenerationService) {
-        var continuation: AsyncStream<PodcastProject>.Continuation!
-        self.updates = AsyncStream { streamContinuation in
-            continuation = streamContinuation
-        }
-        self.updatesContinuation = continuation
+        let stream = AsyncStream.makeStream(
+            of: PodcastProject.self,
+            bufferingPolicy: .bufferingNewest(50)
+        )
+        self.updates = stream.stream
+        self.updatesContinuation = stream.continuation
         self.generationService = generationService
     }
 
