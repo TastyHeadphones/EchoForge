@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 struct SSEDataAccumulator {
     private var dataLines: [String] = []
@@ -43,23 +44,29 @@ enum GeminiWireLogger {
 #endif
     }()
 
+    private static let logger = Logger(subsystem: "EchoForge", category: "GeminiWire")
     private static let maxLoggedChars = 8_192
 
     static func logSSEPayload(index: Int, payload: String) {
         guard isEnabled else { return }
-        print("[Gemini SSE #\(index)] \(clip(payload))")
+        logger.info("SSE #\(index): \(clip(payload), privacy: .public)")
     }
 
     static func logSSEDecodeFailure(payload: String, error: Error) {
-        print("[Gemini SSE decode error] \(error)\nPayload preview:\n\(clip(payload))")
+        if isEnabled {
+            logger.error("SSE decode error: \(String(describing: error), privacy: .public)")
+            logger.error("Payload preview: \(clip(payload), privacy: .public)")
+        } else {
+            logger.error("SSE decode error: \(String(describing: error), privacy: .public)")
+            logger.error("Set ECHOFORGE_LOG_GEMINI=1 to log payload preview.")
+        }
     }
 
     static func logHTTPError(statusCode: Int, body: String?) {
-        guard isEnabled else { return }
-        if let body, !body.isEmpty {
-            print("[Gemini HTTP \(statusCode)] Body preview:\n\(clip(body))")
+        if isEnabled, let body, !body.isEmpty {
+            logger.error("HTTP \(statusCode) body preview: \(clip(body), privacy: .public)")
         } else {
-            print("[Gemini HTTP \(statusCode)] Empty body")
+            logger.error("HTTP \(statusCode). Set ECHOFORGE_LOG_GEMINI=1 to log response body.")
         }
     }
 
