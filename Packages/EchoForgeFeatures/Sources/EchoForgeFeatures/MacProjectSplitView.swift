@@ -42,7 +42,6 @@ struct MacProjectSplitView: View {
                 case let .episode(id):
                     if let episode = sortedEpisodes.first(where: { $0.id == id }) {
                         MacEpisodeDetailView(
-                            project: project,
                             episode: episode,
                             isGenerating: isGenerating,
                             speakerName: speakerName
@@ -219,12 +218,6 @@ private struct MacProjectOverviewView: View {
 }
 
 private struct MacEpisodeDetailView: View {
-    enum BubbleAlignment: Sendable {
-        case leading
-        case trailing
-    }
-
-    let project: PodcastProject
     let episode: Episode
     let isGenerating: Bool
     let speakerName: (Speaker) -> String
@@ -240,19 +233,17 @@ private struct MacEpisodeDetailView: View {
                     if episode.lines.isEmpty {
                         ContentUnavailableView(
                             "Waiting for Dialogue",
-                            systemImage: "text.bubble",
+                            systemImage: "text.quote",
                             description: Text("This episode will fill in as Gemini streams lines.")
                         )
                         .padding(.top, 24)
                     } else {
-                        LazyVStack(alignment: .leading, spacing: 10) {
+                        LazyVStack(alignment: .leading, spacing: 12) {
                             ForEach(episode.lines) { line in
-                                let config = bubbleConfig(for: line.speaker)
-                                MacDialogueBubble(
+                                MacTranscriptLineRow(
                                     speakerLabel: speakerName(line.speaker),
                                     text: line.text,
-                                    alignment: config.alignment,
-                                    tint: config.tint
+                                    accent: accentColor(for: line.speaker)
                                 )
                                 .id(line.id)
                             }
@@ -326,54 +317,40 @@ private struct MacEpisodeDetailView: View {
         }
     }
 
-    private func bubbleConfig(for speaker: Speaker) -> (alignment: BubbleAlignment, tint: Color) {
+    private func accentColor(for speaker: Speaker) -> Color {
         switch speaker {
         case .hostA:
-            return (alignment: .leading, tint: .accentColor.opacity(0.14))
+            return .accentColor
         case .hostB:
-            return (alignment: .trailing, tint: .secondary.opacity(0.12))
+            return .secondary
         }
     }
 }
 
-private struct MacDialogueBubble: View {
+private struct MacTranscriptLineRow: View {
     let speakerLabel: String
     let text: String
-    let alignment: MacEpisodeDetailView.BubbleAlignment
-    let tint: Color
+    let accent: Color
 
     var body: some View {
-        HStack {
-            if alignment == .trailing {
-                Spacer(minLength: 32)
-            }
+        HStack(alignment: .top, spacing: 14) {
+            Text(speakerLabel)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 90, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: true)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(speakerLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                Text(text)
-                    .font(.body)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(tint)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.primary.opacity(0.06), lineWidth: 1)
-            }
-            .frame(maxWidth: 620, alignment: .leading)
-
-            if alignment == .leading {
-                Spacer(minLength: 32)
-            }
+            Text(text)
+                .font(.body)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(alignment: .leading) {
+            Rectangle()
+                .fill(accent.opacity(0.25))
+                .frame(width: 3)
         }
     }
 }
