@@ -48,8 +48,10 @@ No API keys are hardcoded.
 
 On first launch, open **Settings** and paste your Gemini API key.
 
-- The API key is stored in the system **Keychain**.
-- The selected model is stored in **UserDefaults**.
+- The API key is stored in **UserDefaults** on this device.
+- The selected models are stored in **UserDefaults**.
+- Text generation uses a streaming-capable model (for incremental transcript rendering).
+- Speech generation uses a TTS model (for multi-speaker audio).
 
 ## Run
 
@@ -65,6 +67,7 @@ On launch:
 3. Tap **Generate Podcast**
 4. Watch episodes and dialogue lines stream in as NDJSON is parsed incrementally
 5. Export everything via **Export ZIP**
+6. Generate and play multi-speaker audio for complete episodes
 
 ## Export Format
 
@@ -86,7 +89,8 @@ Modular local Swift Packages (SPM):
   - `GoogleGeminiClient` implementation (SSE + incremental NDJSON decoding)
 - `Packages/EchoForgePersistence`
   - `ProjectStore` (simple JSON file storage under Application Support)
-  - `GeminiConfigurationStore` (Keychain-backed API key + UserDefaults model)
+  - `GeminiConfigurationStore` (UserDefaults-backed API key + model selections)
+  - `EpisodeAudioStore` (stores WAV files under Application Support)
 - `Packages/EchoForgeExport`
   - `PodcastZipExporter` (ZIP export via ZIPFoundation)
 - `Packages/EchoForgeFeatures`

@@ -20,7 +20,7 @@ public struct GeminiModelDescriptor: Sendable, Hashable, Identifiable {
 }
 
 public protocol GeminiModelsListing: Sendable {
-    func listTextGenerationModels(
+    func listModels(
         apiKey: String,
         apiVersion: String,
         baseURL: URL
@@ -34,7 +34,7 @@ public struct GoogleGeminiModelsClient: GeminiModelsListing {
         self.session = session
     }
 
-    public func listTextGenerationModels(
+    public func listModels(
         apiKey: String,
         apiVersion: String = "v1beta",
         baseURL: URL = URL(string: "https://generativelanguage.googleapis.com")!
@@ -49,7 +49,6 @@ public struct GoogleGeminiModelsClient: GeminiModelsListing {
 
         repeat {
             let url = try makeListModelsURL(
-                apiKey: apiKey,
                 apiVersion: apiVersion,
                 baseURL: baseURL,
                 pageToken: pageToken
@@ -57,6 +56,7 @@ public struct GoogleGeminiModelsClient: GeminiModelsListing {
 
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
+            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
 
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
@@ -71,12 +71,10 @@ public struct GoogleGeminiModelsClient: GeminiModelsListing {
             let decoded = try JSONDecoder().decode(ListModelsResponse.self, from: data)
             let page = decoded.models ?? []
 
-            // Only include base models that support streaming text generation.
             models.append(contentsOf: page.compactMap { resource in
                 guard resource.name.hasPrefix("models/") else { return nil }
                 let id = resource.name.replacingOccurrences(of: "models/", with: "")
                 let methods = resource.supportedGenerationMethods ?? []
-                guard methods.contains("streamGenerateContent") else { return nil }
 
                 return GeminiModelDescriptor(
                     id: id,
@@ -93,7 +91,6 @@ public struct GoogleGeminiModelsClient: GeminiModelsListing {
     }
 
     private func makeListModelsURL(
-        apiKey: String,
         apiVersion: String,
         baseURL: URL,
         pageToken: String?
@@ -101,9 +98,7 @@ public struct GoogleGeminiModelsClient: GeminiModelsListing {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
         components?.path = "/\(apiVersion)/models"
 
-        var items: [URLQueryItem] = [
-            URLQueryItem(name: "key", value: apiKey)
-        ]
+        var items: [URLQueryItem] = []
         if let pageToken, !pageToken.isEmpty {
             items.append(URLQueryItem(name: "pageToken", value: pageToken))
         }

@@ -5,7 +5,10 @@ import EchoForgePersistence
 @MainActor
 public struct GeminiSettingsView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var isShowingModelPicker: Bool = false
+
+    @State private var isShowingTextModelPicker: Bool = false
+    @State private var isShowingSpeechModelPicker: Bool = false
+
     @StateObject private var viewModel: GeminiSettingsViewModel
 
     public init(
@@ -31,9 +34,7 @@ public struct GeminiSettingsView: View {
                         }
                     }
                 }
-                .task {
-                    await viewModel.loadIfNeeded()
-                }
+                .task { await viewModel.loadIfNeeded() }
                 .alert("Error", isPresented: isPresentingError) {
                     Button("OK", role: .cancel) {
                         viewModel.errorMessage = nil
@@ -41,15 +42,15 @@ public struct GeminiSettingsView: View {
                 } message: {
                     Text(viewModel.errorMessage ?? "")
                 }
-                .navigationDestination(isPresented: $isShowingModelPicker) {
-                    GeminiModelPickerView(
-                        selectedModel: selectedModelBinding,
-                        models: viewModel.availableModels
-                    )
-                }
+        }
+        .sheet(isPresented: $isShowingTextModelPicker) {
+            GeminiModelBrowserSheet(selectedModel: selectedTextModelBinding, models: viewModel.availableTextModels)
+        }
+        .sheet(isPresented: $isShowingSpeechModelPicker) {
+            GeminiModelBrowserSheet(selectedModel: selectedSpeechModelBinding, models: viewModel.availableSpeechModels)
         }
 #if os(macOS)
-        .frame(minWidth: 640, minHeight: 560)
+        .frame(minWidth: 720, minHeight: 620)
 #endif
     }
 
@@ -97,20 +98,24 @@ public struct GeminiSettingsView: View {
                 }
 
                 GroupBox {
-                    VStack(alignment: .leading, spacing: 12) {
-                        LabeledContent("Selected Model") {
-                            Text(viewModel.selectedModel)
-                                .font(.system(.body, design: .monospaced))
-                                .lineLimit(2)
-                                .multilineTextAlignment(.trailing)
-                                .frame(maxWidth: 420, alignment: .trailing)
-                        }
+                    VStack(alignment: .leading, spacing: 14) {
+                        modelRow(
+                            title: "Text (Streaming)",
+                            selectedModel: viewModel.selectedTextModel,
+                            chooseAction: { isShowingTextModelPicker = true }
+                        )
+
+                        Divider()
+
+                        modelRow(
+                            title: "Speech (TTS)",
+                            selectedModel: viewModel.selectedSpeechModel,
+                            chooseAction: { isShowingSpeechModelPicker = true }
+                        )
+
+                        Divider()
 
                         HStack(spacing: 12) {
-                            Button("Choose Model…") {
-                                isShowingModelPicker = true
-                            }
-
                             Button {
                                 Task { await viewModel.refreshModels() }
                             } label: {
@@ -133,12 +138,43 @@ public struct GeminiSettingsView: View {
                     }
                     .padding(.vertical, 6)
                 } label: {
-                    Label("Model", systemImage: "slider.horizontal.3")
+                    Label("Models", systemImage: "slider.horizontal.3")
                 }
+
+                Text("The API key is stored in UserDefaults on this device and never written to source control.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: 820, alignment: .leading)
+            .frame(maxWidth: 860, alignment: .leading)
             .padding(.horizontal, 28)
             .padding(.vertical, 24)
+        }
+    }
+
+    private func modelRow(title: String, selectedModel: String, chooseAction: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(title)
+                    .font(.headline)
+
+                Spacer()
+
+                Text(selectedModel)
+                    .font(.system(.body, design: .monospaced))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 460, alignment: .trailing)
+                    .textSelection(.enabled)
+            }
+
+            HStack {
+                Button("Choose…") {
+                    chooseAction()
+                }
+
+                Spacer()
+            }
         }
     }
 
@@ -170,19 +206,30 @@ public struct GeminiSettingsView: View {
             } header: {
                 Text("Gemini")
             } footer: {
-                Text("The API key is stored in your Keychain and never written to source control.")
+                Text("The API key is stored in UserDefaults on this device and never written to source control.")
             }
 
             Section {
-                LabeledContent("Selected") {
-                    Text(viewModel.selectedModel)
+                LabeledContent("Text (Streaming)") {
+                    Text(viewModel.selectedTextModel)
                         .font(.system(.body, design: .monospaced))
                         .lineLimit(2)
                         .multilineTextAlignment(.trailing)
                 }
 
-                Button("Choose Model…") {
-                    isShowingModelPicker = true
+                Button("Choose Text Model…") {
+                    isShowingTextModelPicker = true
+                }
+
+                LabeledContent("Speech (TTS)") {
+                    Text(viewModel.selectedSpeechModel)
+                        .font(.system(.body, design: .monospaced))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
+                }
+
+                Button("Choose Speech Model…") {
+                    isShowingSpeechModelPicker = true
                 }
 
                 Button {
@@ -201,13 +248,24 @@ public struct GeminiSettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
-                Text("Model")
+                Text("Models")
             }
         }
     }
 
     private var isSaveDisabled: Bool {
         viewModel.apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var isPresentingError: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { presenting in
+                if !presenting {
+                    viewModel.errorMessage = nil
+                }
+            }
+        )
     }
 }
 
@@ -224,27 +282,20 @@ extension GeminiSettingsView {
             return message
         }
 
-        return "Choose a Gemini model for generation. "
-            + "Refresh fetches models from the Gemini API and requires a saved API key."
+        return "Text model is used for streaming transcripts. Speech model is used to generate multi-speaker audio."
     }
 
-    private var selectedModelBinding: Binding<String> {
+    private var selectedTextModelBinding: Binding<String> {
         Binding(
-            get: { viewModel.selectedModel },
-            set: { newValue in
-                viewModel.userSelectedModel(newValue)
-            }
+            get: { viewModel.selectedTextModel },
+            set: { newValue in viewModel.userSelectedTextModel(newValue) }
         )
     }
 
-    private var isPresentingError: Binding<Bool> {
+    private var selectedSpeechModelBinding: Binding<String> {
         Binding(
-            get: { viewModel.errorMessage != nil },
-            set: { presenting in
-                if !presenting {
-                    viewModel.errorMessage = nil
-                }
-            }
+            get: { viewModel.selectedSpeechModel },
+            set: { newValue in viewModel.userSelectedSpeechModel(newValue) }
         )
     }
 }

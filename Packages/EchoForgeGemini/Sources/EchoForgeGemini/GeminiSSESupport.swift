@@ -166,18 +166,19 @@ enum GeminiSSEJSONFramerError: LocalizedError, Sendable {
 }
 
 enum GeminiWireLogger {
-    /// To print SSE payloads in Xcode's console, set `ECHOFORGE_LOG_GEMINI=1` in the run scheme environment.
+    /// To print Gemini wire payloads in Xcode's console, set `ECHOFORGE_LOG_GEMINI=1` in the run scheme environment.
     static let isEnabled: Bool = {
-#if DEBUG
         let value = ProcessInfo.processInfo.environment["ECHOFORGE_LOG_GEMINI"] ?? ""
         return value == "1" || value.lowercased() == "true"
-#else
-        return false
-#endif
     }()
 
     private static let logger = Logger(subsystem: "EchoForge", category: "GeminiWire")
     private static let maxLoggedChars = 2_048
+
+    static func logSSELine(index: Int, line: String) {
+        guard isEnabled else { return }
+        logger.info("SSE line #\(index): \(clip(line), privacy: .public)")
+    }
 
     static func logSSEPayload(index: Int, payload: String) {
         guard isEnabled else { return }
@@ -186,25 +187,25 @@ enum GeminiWireLogger {
 
     static func logSSEDecodeFailure(payload: String, error: Error) {
         logger.error("SSE decode error: \(String(describing: error), privacy: .public)")
-#if DEBUG
-        logger.error("Payload preview: \(clip(payload), privacy: .public)")
-#else
-        logger.error("Set ECHOFORGE_LOG_GEMINI=1 to log payload preview.")
-#endif
+        if isEnabled {
+            logger.error("Payload preview: \(clip(payload), privacy: .public)")
+        } else {
+            logger.error("Set ECHOFORGE_LOG_GEMINI=1 to log payload preview.")
+        }
     }
 
     static func logSSEJSONFrameDecodeFailure(framePreview: String, error: Error) {
         logger.error("SSE JSON frame decode error: \(String(describing: error), privacy: .public)")
-#if DEBUG
-        logger.error("SSE JSON frame preview: \(clip(framePreview), privacy: .public)")
-#endif
+        if isEnabled {
+            logger.error("SSE JSON frame preview: \(clip(framePreview), privacy: .public)")
+        }
     }
 
     static func logModelOutputDecodeFailure(chunkPreview: String, error: Error) {
         logger.error("Model output decode error: \(String(describing: error), privacy: .public)")
-#if DEBUG
-        logger.error("Model output preview: \(clip(chunkPreview), privacy: .public)")
-#endif
+        if isEnabled {
+            logger.error("Model output preview: \(clip(chunkPreview), privacy: .public)")
+        }
     }
 
     static func logHTTPError(statusCode: Int, body: String?) {

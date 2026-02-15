@@ -8,6 +8,7 @@ struct ProjectDetailView: View {
     var onDeleted: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var audioPlayer: AudioPlayerViewModel
 
     @State private var isShowingDeleteConfirmation: Bool = false
 
@@ -38,6 +39,8 @@ struct ProjectDetailView: View {
 
             ForEach(project.episodes.sorted(by: { $0.number < $1.number })) { episode in
                 Section {
+                    audioControls(episode: episode)
+
                     if let summary = episode.summary, !summary.isEmpty {
                         Text(summary)
                             .font(.callout)
@@ -110,6 +113,14 @@ struct ProjectDetailView: View {
                 }
             }
 
+            if project.status == .failed {
+                Button {
+                    viewModel.retryGeneration(projectID: project.id)
+                } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                }
+            }
+
             Button {
                 viewModel.exportProject(id: project.id)
             } label: {
@@ -143,6 +154,60 @@ struct ProjectDetailView: View {
             return "Episode \(episode.number): \(title)"
         }
         return "Episode \(episode.number)"
+    }
+
+    @ViewBuilder
+    private func audioControls(episode: Episode) -> some View {
+        switch episode.audioStatus {
+        case .none:
+            Button {
+                viewModel.generateAudio(projectID: project.id, episodeID: episode.id)
+            } label: {
+                Label("Generate Audio", systemImage: "waveform")
+            }
+            .disabled(project.status != .complete || episode.status != .complete || episode.lines.isEmpty)
+
+        case .generating:
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Generating audio…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .ready:
+            Button {
+                Task { @MainActor in
+                    guard let url = await viewModel.audioFileURL(projectID: project.id, episode: episode) else {
+                        return
+                    }
+                    audioPlayer.play(
+                        projectID: project.id,
+                        episodeID: episode.id,
+                        title: episodeTitle(episode),
+                        url: url
+                    )
+                }
+            } label: {
+                Label("Play Audio", systemImage: "play.fill")
+            }
+
+        case .failed:
+            VStack(alignment: .leading, spacing: 8) {
+                if let message = episode.audio?.errorMessage, !message.isEmpty {
+                    Text(message)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button {
+                    viewModel.generateAudio(projectID: project.id, episodeID: episode.id)
+                } label: {
+                    Label("Retry Audio", systemImage: "arrow.clockwise")
+                }
+            }
+        }
     }
 }
 #endif

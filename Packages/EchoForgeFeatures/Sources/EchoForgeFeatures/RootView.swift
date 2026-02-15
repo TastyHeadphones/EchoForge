@@ -5,6 +5,7 @@ public struct RootView: View {
     private let dependencies: AppDependencies
 
     @StateObject private var viewModel: LibraryViewModel
+    @StateObject private var audioPlayer: AudioPlayerViewModel = AudioPlayerViewModel()
 
     public init(dependencies: AppDependencies = .live()) {
         self.dependencies = dependencies
@@ -13,6 +14,7 @@ public struct RootView: View {
 
     public var body: some View {
         LibraryView(viewModel: viewModel)
+        .environmentObject(audioPlayer)
         .task {
             await viewModel.bootstrap()
         }
@@ -40,6 +42,10 @@ public struct RootView: View {
             }
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+        .safeAreaInset(edge: .bottom) {
+            AudioPlayerBar()
+                .environmentObject(audioPlayer)
         }
     }
 

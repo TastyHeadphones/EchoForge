@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 import EchoForgeGemini
 import EchoForgePersistence
 
@@ -8,8 +7,12 @@ final class GeminiSettingsViewModel: ObservableObject {
     @Published var apiKeyDraft: String = ""
     @Published private(set) var isKeyPresent: Bool = false
 
-    @Published var selectedModel: String = GeminiModelFallback.defaultModelID
-    @Published private(set) var availableModels: [GeminiModelDescriptor] = GeminiModelFallback.fallback
+    @Published var selectedTextModel: String = GeminiModelFallback.defaultTextModelID
+    @Published var selectedSpeechModel: String = GeminiModelFallback.defaultSpeechModelID
+
+    @Published private(set) var availableTextModels: [GeminiModelDescriptor] = GeminiModelFallback.textFallback
+    @Published private(set) var availableSpeechModels: [GeminiModelDescriptor] = GeminiModelFallback.speechFallback
+
     @Published private(set) var isLoadingModels: Bool = false
     @Published private(set) var modelLoadErrorMessage: String?
 
@@ -85,49 +88,66 @@ final class GeminiSettingsViewModel: ObservableObject {
             do {
                 let apiKey = try await configurationStore.readAPIKey()
                 guard let apiKey, !apiKey.isEmpty else {
-                    availableModels = GeminiModelFallback.fallbackEnsuringSelected(
-                        modelID: selectedModel,
-                        models: GeminiModelFallback.fallback
-                    )
-                    modelLoadErrorMessage = "Save an API key to fetch the full model list."
+                    applyFallbackModels(reason: "Save an API key to fetch the full model list.")
                     continue
                 }
 
-                let remote = try await modelsClient.listTextGenerationModels(
+                let remote = try await modelsClient.listModels(
                     apiKey: apiKey,
                     apiVersion: "v1beta",
                     baseURL: GeminiModelFallback.baseURL
                 )
-                availableModels = GeminiModelFallback.merge(
-                    remoteModels: remote,
-                    fallbackModels: GeminiModelFallback.fallback,
-                    selectedModelID: selectedModel
+
+                let textModels = remote.filter { $0.supportedGenerationMethods.contains("streamGenerateContent") }
+                let speechModels = remote.filter { model in
+                    model.supportedGenerationMethods.contains("generateContent")
+                        && model.id.localizedCaseInsensitiveContains("tts")
+                }
+
+                availableTextModels = GeminiModelFallback.merge(
+                    remoteModels: textModels,
+                    fallbackModels: GeminiModelFallback.textFallback,
+                    selectedModelID: selectedTextModel
+                )
+
+                availableSpeechModels = GeminiModelFallback.merge(
+                    remoteModels: speechModels,
+                    fallbackModels: GeminiModelFallback.speechFallback,
+                    selectedModelID: selectedSpeechModel
                 )
             } catch {
-                availableModels = GeminiModelFallback.fallbackEnsuringSelected(
-                    modelID: selectedModel,
-                    models: GeminiModelFallback.fallback
-                )
-                modelLoadErrorMessage = error.localizedDescription
+                applyFallbackModels(reason: error.localizedDescription)
             }
         } while shouldRefreshModelsAgain
     }
 
-    func userSelectedModel(_ newValue: String) {
+    func userSelectedTextModel(_ newValue: String) {
         let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        selectedModel = trimmed
-
-        if !availableModels.contains(where: { $0.id == trimmed }) {
-            availableModels = GeminiModelFallback.fallbackEnsuringSelected(
-                modelID: trimmed,
-                models: availableModels
-            )
-        }
+        selectedTextModel = trimmed
+        availableTextModels = GeminiModelFallback.fallbackEnsuringSelected(
+            modelID: trimmed,
+            models: availableTextModels
+        )
 
         Task { [configurationStore] in
-            await configurationStore.setModel(trimmed)
+            await configurationStore.setTextModel(trimmed)
+        }
+    }
+
+    func userSelectedSpeechModel(_ newValue: String) {
+        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        selectedSpeechModel = trimmed
+        availableSpeechModels = GeminiModelFallback.fallbackEnsuringSelected(
+            modelID: trimmed,
+            models: availableSpeechModels
+        )
+
+        Task { [configurationStore] in
+            await configurationStore.setSpeechModel(trimmed)
         }
     }
 
@@ -140,31 +160,56 @@ final class GeminiSettingsViewModel: ObservableObject {
             isKeyPresent = false
         }
 
-        let storedModel = await configurationStore.readModel()
-        selectedModel = storedModel
-        availableModels = GeminiModelFallback.fallbackEnsuringSelected(
-            modelID: storedModel,
-            models: availableModels
+        let storedTextModel = await configurationStore.readTextModel()
+        selectedTextModel = storedTextModel
+        availableTextModels = GeminiModelFallback.fallbackEnsuringSelected(
+            modelID: storedTextModel,
+            models: availableTextModels
+        )
+
+        let storedSpeechModel = await configurationStore.readSpeechModel()
+        selectedSpeechModel = storedSpeechModel
+        availableSpeechModels = GeminiModelFallback.fallbackEnsuringSelected(
+            modelID: storedSpeechModel,
+            models: availableSpeechModels
         )
 
         // Best-effort: populate a reasonably current list of models.
         await refreshModels()
     }
+
+    private func applyFallbackModels(reason: String) {
+        availableTextModels = GeminiModelFallback.merge(
+            remoteModels: [],
+            fallbackModels: GeminiModelFallback.textFallback,
+            selectedModelID: selectedTextModel
+        )
+        availableSpeechModels = GeminiModelFallback.merge(
+            remoteModels: [],
+            fallbackModels: GeminiModelFallback.speechFallback,
+            selectedModelID: selectedSpeechModel
+        )
+        modelLoadErrorMessage = reason
+    }
 }
 
 private enum GeminiModelFallback {
     static let baseURL: URL = URL(string: "https://generativelanguage.googleapis.com")!
-    static let defaultModelID: String = "gemini-2.5-flash"
+
+    static let defaultTextModelID: String = "gemini-2.5-flash"
+    static let defaultSpeechModelID: String = "gemini-2.5-flash-preview-tts"
 
     // Curated from Google Gemini API docs. This list is only a fallback; refresh pulls the authoritative list.
-    static let fallback: [GeminiModelDescriptor] = [
+    static let textFallback: [GeminiModelDescriptor] = [
         GeminiModelDescriptor(id: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash"),
         GeminiModelDescriptor(id: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro"),
         GeminiModelDescriptor(id: "gemini-2.5-flash-lite", displayName: "Gemini 2.5 Flash-Lite"),
         GeminiModelDescriptor(id: "gemini-2.0-flash", displayName: "Gemini 2.0 Flash"),
-        GeminiModelDescriptor(id: "gemini-2.0-flash-lite", displayName: "Gemini 2.0 Flash-Lite"),
-        GeminiModelDescriptor(id: "gemini-3-flash-preview", displayName: "Gemini 3 Flash (Preview)"),
-        GeminiModelDescriptor(id: "gemini-3-pro-preview", displayName: "Gemini 3 Pro (Preview)")
+        GeminiModelDescriptor(id: "gemini-2.0-flash-lite", displayName: "Gemini 2.0 Flash-Lite")
+    ]
+
+    static let speechFallback: [GeminiModelDescriptor] = [
+        GeminiModelDescriptor(id: "gemini-2.5-flash-preview-tts", displayName: "Gemini 2.5 Flash (Preview TTS)")
     ]
 
     static func merge(

@@ -38,6 +38,7 @@ public struct Episode: Identifiable, Codable, Sendable, Equatable {
     public var summary: String?
     public var lines: [DialogueLine]
     public var status: Status
+    public var audio: EpisodeAudio?
 
     public init(
         id: UUID = UUID(),
@@ -45,7 +46,8 @@ public struct Episode: Identifiable, Codable, Sendable, Equatable {
         title: String? = nil,
         summary: String? = nil,
         lines: [DialogueLine] = [],
-        status: Status = .pending
+        status: Status = .pending,
+        audio: EpisodeAudio? = nil
     ) {
         self.id = id
         self.number = number
@@ -53,12 +55,39 @@ public struct Episode: Identifiable, Codable, Sendable, Equatable {
         self.summary = summary
         self.lines = lines
         self.status = status
+        self.audio = audio
     }
 
     public enum Status: String, Codable, Sendable, Equatable {
         case pending
         case generating
         case complete
+        case failed
+    }
+}
+
+public struct EpisodeAudio: Codable, Sendable, Equatable {
+    public var status: Status
+    public var fileName: String?
+    public var generatedAt: Date?
+    public var errorMessage: String?
+
+    public init(
+        status: Status,
+        fileName: String? = nil,
+        generatedAt: Date? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.status = status
+        self.fileName = fileName
+        self.generatedAt = generatedAt
+        self.errorMessage = errorMessage
+    }
+
+    public enum Status: String, Codable, Sendable, Equatable {
+        case none
+        case generating
+        case ready
         case failed
     }
 }
@@ -118,5 +147,9 @@ public extension Episode {
         lines
             .map { "\($0.speaker.rawValue): \($0.text)" }
             .joined(separator: "\n")
+    }
+
+    var audioStatus: EpisodeAudio.Status {
+        audio?.status ?? .none
     }
 }

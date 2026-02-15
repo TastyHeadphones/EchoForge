@@ -5,36 +5,36 @@ public protocol GeminiConfigurationStoring: Sendable {
     func setAPIKey(_ key: String) async throws
     func clearAPIKey() async throws
 
-    func readModel() async -> String
-    func setModel(_ model: String) async
+    func readTextModel() async -> String
+    func setTextModel(_ model: String) async
+
+    func readSpeechModel() async -> String
+    func setSpeechModel(_ model: String) async
 }
 
 public actor GeminiConfigurationStore: GeminiConfigurationStoring {
-    private let keychain: KeychainGenericPasswordStore
-    private let keychainItem: KeychainGenericPasswordItem
     private let defaults: UserDefaults
-    private let modelDefaultsKey: String
+    private let apiKeyDefaultsKey: String
+    private let textModelDefaultsKey: String
+    private let speechModelDefaultsKey: String
+    private let legacyModelDefaultsKey: String = "EchoForge.gemini.model"
 
     public init(
-        keychain: KeychainGenericPasswordStore = .init(),
         defaults: UserDefaults = .standard,
-        service: String? = Bundle.main.bundleIdentifier,
-        keychainAccount: String = "gemini_api_key",
-        modelDefaultsKey: String = "EchoForge.gemini.model"
+        apiKeyDefaultsKey: String = "EchoForge.gemini.apiKey",
+        textModelDefaultsKey: String = "EchoForge.gemini.textModel",
+        speechModelDefaultsKey: String = "EchoForge.gemini.speechModel"
     ) {
-        let resolvedService = (service?.isEmpty == false) ? service! : "EchoForge"
-
-        self.keychain = keychain
         self.defaults = defaults
-        self.keychainItem = KeychainGenericPasswordItem(service: resolvedService, account: keychainAccount)
-        self.modelDefaultsKey = modelDefaultsKey
+        self.apiKeyDefaultsKey = apiKeyDefaultsKey
+        self.textModelDefaultsKey = textModelDefaultsKey
+        self.speechModelDefaultsKey = speechModelDefaultsKey
     }
 
     public func readAPIKey() async throws -> String? {
-        guard let data = try keychain.read(item: keychainItem) else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
+        let stored = defaults.string(forKey: apiKeyDefaultsKey)
+        let trimmed = stored?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
     }
 
     public func setAPIKey(_ key: String) async throws {
@@ -42,31 +42,49 @@ public actor GeminiConfigurationStore: GeminiConfigurationStoring {
         guard !trimmed.isEmpty else {
             return
         }
-
-        let data = Data(trimmed.utf8)
-        try keychain.upsert(data, item: keychainItem)
+        defaults.set(trimmed, forKey: apiKeyDefaultsKey)
     }
 
     public func clearAPIKey() async throws {
-        try keychain.delete(item: keychainItem)
+        defaults.removeObject(forKey: apiKeyDefaultsKey)
     }
 
-    public func readModel() async -> String {
-        let stored = defaults.string(forKey: modelDefaultsKey)
+    public func readTextModel() async -> String {
+        let stored = defaults.string(forKey: textModelDefaultsKey)
+            ?? defaults.string(forKey: legacyModelDefaultsKey)
         let trimmed = stored?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed?.isEmpty == false ? trimmed! : defaultModel
+        return trimmed?.isEmpty == false ? trimmed! : defaultTextModel
     }
 
-    public func setModel(_ model: String) async {
+    public func setTextModel(_ model: String) async {
         let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            defaults.removeObject(forKey: modelDefaultsKey)
+            defaults.removeObject(forKey: textModelDefaultsKey)
         } else {
-            defaults.set(trimmed, forKey: modelDefaultsKey)
+            defaults.set(trimmed, forKey: textModelDefaultsKey)
         }
     }
 
-    private var defaultModel: String {
+    public func readSpeechModel() async -> String {
+        let stored = defaults.string(forKey: speechModelDefaultsKey)
+        let trimmed = stored?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed! : defaultSpeechModel
+    }
+
+    public func setSpeechModel(_ model: String) async {
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            defaults.removeObject(forKey: speechModelDefaultsKey)
+        } else {
+            defaults.set(trimmed, forKey: speechModelDefaultsKey)
+        }
+    }
+
+    private var defaultTextModel: String {
         "gemini-2.5-flash"
+    }
+
+    private var defaultSpeechModel: String {
+        "gemini-2.5-flash-preview-tts"
     }
 }

@@ -146,7 +146,8 @@ struct MacLibrarySplitView: View {
                     if let episode = sortedEpisodes.first(where: { $0.id == episodeID }) {
                         MacLibraryEpisodeDetailView(
                             project: project,
-                            episode: episode
+                            episode: episode,
+                            viewModel: viewModel
                         )
                     } else {
                         MacLibraryProjectOverviewView(project: project)
@@ -191,6 +192,14 @@ struct MacLibrarySplitView: View {
                         Task { await viewModel.cancelGeneration(for: project.id) }
                     } label: {
                         Label("Cancel", systemImage: "xmark")
+                    }
+                }
+
+                if project.status == .failed {
+                    Button {
+                        viewModel.retryGeneration(projectID: project.id)
+                    } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
                     }
                 }
 

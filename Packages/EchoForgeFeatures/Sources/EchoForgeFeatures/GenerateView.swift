@@ -37,13 +37,9 @@ struct GenerateView: View {
 
                         Divider()
 
-                        Stepper {
+                        Stepper(value: $viewModel.episodeCount, in: 1...Int.max, step: 1) {
                             Text("Episodes: \(viewModel.episodeCount)")
                                 .monospacedDigit()
-                        } onIncrement: {
-                            viewModel.episodeCount += 1
-                        } onDecrement: {
-                            viewModel.episodeCount = max(1, viewModel.episodeCount - 1)
                         }
                         .controlSize(.large)
                     }
@@ -59,7 +55,7 @@ struct GenerateView: View {
                                 Text(viewModel.isGeminiConfigured ? "Gemini configured" : "Gemini not configured")
                                     .font(.headline)
 
-                                Text("Your API key is stored in the system Keychain.")
+                                Text("Your API key is stored in UserDefaults on this device.")
                                     .font(.callout)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -115,12 +111,8 @@ struct GenerateView: View {
             Section {
                 topicInput
 
-                Stepper {
+                Stepper(value: $viewModel.episodeCount, in: 1...Int.max, step: 1) {
                     Text("Episodes: \(viewModel.episodeCount)")
-                } onIncrement: {
-                    viewModel.episodeCount += 1
-                } onDecrement: {
-                    viewModel.episodeCount = max(1, viewModel.episodeCount - 1)
                 }
             } header: {
                 Text("Generate")
@@ -146,7 +138,7 @@ struct GenerateView: View {
                 }
                 .disabled(isGenerateDisabled)
 
-                Text("Your Gemini API key is stored in the system Keychain. Configure it from Settings.")
+                Text("Your Gemini API key is stored in UserDefaults on this device. Configure it from Settings.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

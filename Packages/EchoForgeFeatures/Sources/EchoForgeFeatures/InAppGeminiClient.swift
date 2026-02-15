@@ -23,7 +23,7 @@ struct InAppGeminiClient: GeminiClient {
                         throw InAppGeminiClientError.missingAPIKey
                     }
 
-                    let model = await configurationStore.readModel()
+                    let model = await configurationStore.readTextModel()
                     let configuration = GeminiRuntimeConfiguration(apiKey: apiKey, model: model)
 
                     let client = GoogleGeminiClient(configuration: configuration, session: session)

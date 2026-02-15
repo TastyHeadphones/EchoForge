@@ -136,9 +136,13 @@ private func decode(
     var eventDecoder = PodcastStreamEventChunkDecoder()
     var jsonFramer = GeminiSSEJSONFramer()
     var sseEventIndex = 0
+    var sseLineIndex = 0
 
     for try await line in bytes.lines {
         try Task.checkCancellation()
+
+        sseLineIndex += 1
+        GeminiWireLogger.logSSELine(index: sseLineIndex, line: line)
 
         guard let payload = accumulator.ingest(line: line) else {
             continue
@@ -220,6 +224,7 @@ private func makeURLRequest(prompt: String, configuration: GeminiRuntimeConfigur
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+    request.setValue(configuration.apiKey, forHTTPHeaderField: "x-goog-api-key")
 
     let body = GeminiGenerateContentRequest(
         contents: [
@@ -240,8 +245,7 @@ private func makeStreamGenerateContentURL(configuration: GeminiRuntimeConfigurat
     var components = URLComponents(url: configuration.baseURL, resolvingAgainstBaseURL: false)
     components?.path = "/\(configuration.apiVersion)/models/\(configuration.model):streamGenerateContent"
     components?.queryItems = [
-        URLQueryItem(name: "alt", value: "sse"),
-        URLQueryItem(name: "key", value: configuration.apiKey)
+        URLQueryItem(name: "alt", value: "sse")
     ]
 
     guard let url = components?.url else {

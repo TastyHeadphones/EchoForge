@@ -23,15 +23,19 @@ final class LibraryViewModel: ObservableObject {
     private let geminiConfigurationStore: any GeminiConfigurationStoring
     private let projectStore: any ProjectStoring
     private let exporter: any PodcastExporting
+    private let episodeAudioStore: any EpisodeAudioStoring
 
     private let generationBackend: PodcastGenerationBackend
+    private let audioBackend: EpisodeAudioGenerationBackend
 
-    private var updatesTask: Task<Void, Never>?
+    private var textUpdatesTask: Task<Void, Never>?
+    private var audioUpdatesTask: Task<Void, Never>?
 
     init(dependencies: AppDependencies = .live()) {
         self.geminiConfigurationStore = dependencies.geminiConfigurationStore
         self.projectStore = dependencies.projectStore
         self.exporter = dependencies.exporter
+        self.episodeAudioStore = dependencies.episodeAudioStore
 
         let generationService = PodcastGenerationService(
             geminiClient: dependencies.geminiClient,
@@ -39,11 +43,19 @@ final class LibraryViewModel: ObservableObject {
         )
         self.generationBackend = PodcastGenerationBackend(generationService: generationService)
 
+        let audioService = EpisodeAudioGenerationService(
+            speechClient: dependencies.geminiSpeechClient,
+            projectStore: dependencies.projectStore,
+            audioStore: dependencies.episodeAudioStore
+        )
+        self.audioBackend = EpisodeAudioGenerationBackend(service: audioService)
+
         subscribeToUpdates()
     }
 
     deinit {
-        updatesTask?.cancel()
+        textUpdatesTask?.cancel()
+        audioUpdatesTask?.cancel()
     }
 
     func bootstrap() async {
@@ -142,17 +154,83 @@ final class LibraryViewModel: ObservableObject {
         upsertProject(project)
     }
 
+    func retryGeneration(projectID: UUID) {
+        Task { [weak self] in
+            guard let self else { return }
+            await self.retryGenerationImpl(projectID: projectID)
+        }
+    }
+
+    private func retryGenerationImpl(projectID: UUID) async {
+        guard isGeminiConfigured else {
+            errorMessage = "Gemini is not configured. Open Settings to add your API key."
+            isShowingSettings = true
+            return
+        }
+
+        await generationBackend.cancel(projectID: projectID)
+
+        guard var project = project(id: projectID) else { return }
+
+        project.status = .generating
+        project.errorMessage = nil
+        project.episodes = []
+        project.lastUpdatedAt = Date()
+
+        do {
+            try await projectStore.save(project)
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+
+        upsertProject(project)
+
+        let hostAName = project.hosts.first(where: { $0.id == .hostA })?.displayName ?? "Host A"
+        let hostBName = project.hosts.first(where: { $0.id == .hostB })?.displayName ?? "Host B"
+
+        let request = PodcastGenerationRequest(
+            projectTitle: project.title,
+            topic: project.topic,
+            episodeCount: max(1, project.episodeCountRequested),
+            hostAName: hostAName,
+            hostBName: hostBName
+        )
+
+        await generationBackend.startGeneration(initialProject: project, request: request)
+    }
+
     func deleteProject(id: UUID) async {
         await generationBackend.cancel(projectID: id)
+        await audioBackend.cancelAll(projectID: id)
 
         do {
             try await projectStore.delete(id: id)
+            try? await episodeAudioStore.deleteAllAudio(projectID: id)
         } catch {
             errorMessage = error.localizedDescription
             return
         }
 
         projects.removeAll(where: { $0.id == id })
+    }
+
+    func generateAudio(projectID: UUID, episodeID: Episode.ID) {
+        Task { [audioBackend] in
+            await audioBackend.start(projectID: projectID, episodeID: episodeID)
+        }
+    }
+
+    func audioFileURL(projectID: UUID, episode: Episode) async -> URL? {
+        do {
+            return try await episodeAudioStore.fileURL(
+                projectID: projectID,
+                episodeID: episode.id,
+                fileName: episode.audio?.fileName
+            )
+        } catch {
+            return nil
+        }
     }
 
     func exportProject(id: UUID) {
@@ -193,9 +271,16 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func subscribeToUpdates() {
-        updatesTask?.cancel()
-        updatesTask = Task { @MainActor [generationBackend] in
+        textUpdatesTask?.cancel()
+        textUpdatesTask = Task { @MainActor [generationBackend] in
             for await updated in generationBackend.updates {
+                self.upsertProject(updated)
+            }
+        }
+
+        audioUpdatesTask?.cancel()
+        audioUpdatesTask = Task { @MainActor [audioBackend] in
+            for await updated in audioBackend.updates {
                 self.upsertProject(updated)
             }
         }
